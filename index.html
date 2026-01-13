@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPH Tech Convention App V2</title>
+    <title>NPH TechCon App</title>
+    <!-- Updated Favicon: Blue rounded square with "NPH" text -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%233b82f6%22/><text x=%2250%22 y=%2265%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22>NPH</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -67,7 +69,7 @@
         <div class="flex justify-between items-center max-w-2xl mx-auto">
             <div>
                 <h1 class="text-xl font-bold text-white tracking-wide">NPH <span class="text-blue-500">TechCon</span></h1>
-                <p id="student-id-display" class="text-xs text-slate-400">ID: ...</p>
+                <p id="student-name-display" class="text-xs text-slate-400">Student: ...</p>
             </div>
             <div class="text-right flex items-center gap-2">
                 <div id="sync-status" class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded border border-slate-700 transition-colors">
@@ -121,7 +123,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- FIREBASE SETUP V2 ---
@@ -139,32 +141,20 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        // Using a distinct ID for V2 to keep data organized in your Firestore
         const appId = 'nph-techcon-v2';
 
-        let currentUser = null; // Firebase User
-        let studentId = localStorage.getItem('nph_student_id'); // Custom Student ID
+        let currentUser = null; 
         let currentView = 'login';
         
         // Local state cache
         let appData = {
+            studentName: '',
             notes: { iot: '', sec: '', ai: '', panel: '' },
             checklist: { charged: false, pack: false, login: false }
         };
 
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
-
-        // --- AUTH & DATA SYNC ---
-        const initAuth = async () => {
-            try {
-                // Anonymous auth is standard for this type of public app
-                await signInAnonymously(auth);
-            } catch (e) {
-                console.error("Auth failed - check Firebase Console > Authentication > Sign-in method > Enable Anonymous", e);
-                updateSyncStatus('offline');
-            }
-        };
 
         const updateSyncStatus = (status) => {
             const el = document.getElementById('sync-status');
@@ -182,11 +172,11 @@
             }
         };
 
-        const startDataListener = () => {
-            if (!studentId || !currentUser) return;
+        const startDataListener = (user) => {
+            if (!user) return;
 
-            // Using PUBLIC data collection so multiple devices can access the same ID
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
+            // USE USER UID as key
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', user.uid);
             
             if (unsubscribeSnapshot) unsubscribeSnapshot();
 
@@ -195,13 +185,20 @@
                     const data = docSnap.data();
                     appData = { ...appData, ...data };
                     
+                    // Update header if name exists
+                    const nameDisplay = document.getElementById('student-name-display');
+                    if (nameDisplay && appData.studentName) {
+                        nameDisplay.textContent = `Student: ${appData.studentName}`;
+                    }
+
                     if (currentView !== 'login') {
                         if (currentView === 'prep' || currentView === 'passport') {
                             window.renderView(currentView);
                         }
                     }
                 } else {
-                    console.log("Initializing new student profile in Firestore...");
+                    console.log("Initializing new student profile...");
+                    // If this is a fresh login, save the name we might have captured during login or default
                     saveToCloud();
                 }
                 updateSyncStatus('online');
@@ -211,20 +208,17 @@
             });
         };
 
+        // Auth State Listener
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                if (studentId) {
-                    startDataListener();
-                    window.renderView('home');
-                } else {
-                    window.renderView('login');
-                }
+                startDataListener(user);
+                window.renderView('home');
+            } else {
+                currentUser = null;
+                window.renderView('login');
             }
         });
-
-        // Start Auth
-        initAuth();
 
         // --- DATA ---
         const agendaData = [
@@ -245,28 +239,43 @@
 
         // --- GLOBAL FUNCTIONS (Attached to Window) ---
 
-        window.login = () => {
-            const input = document.getElementById('student-id-input');
-            const id = input.value.trim();
-            if (id.length > 0) {
-                studentId = id;
-                localStorage.setItem('nph_student_id', id);
-                startDataListener();
-                window.renderView('home');
-            } else {
-                alert("Please enter a valid Student ID");
+        window.login = async () => {
+            const nameInput = document.getElementById('student-name-input');
+            const name = nameInput.value.trim();
+            
+            if (name.length === 0) {
+                alert("Please enter your name first.");
+                return;
+            }
+
+            const provider = new GoogleAuthProvider();
+            try {
+                const result = await signInWithPopup(auth, provider);
+                const user = result.user;
+                
+                // Set name immediately in local state so it saves on first sync
+                appData.studentName = name;
+                
+                // Auth listener handles view transition
+            } catch (error) {
+                console.error("Login failed", error);
+                alert("Google Sign-In failed. Please try again.");
             }
         };
 
-        window.logout = () => {
-            studentId = null;
-            localStorage.removeItem('nph_student_id');
-            if (unsubscribeSnapshot) unsubscribeSnapshot();
-            appData = {
-                notes: { iot: '', sec: '', ai: '', panel: '' },
-                checklist: { charged: false, pack: false, login: false }
-            };
-            window.renderView('login');
+        window.logout = async () => {
+            try {
+                await signOut(auth);
+                if (unsubscribeSnapshot) unsubscribeSnapshot();
+                appData = {
+                    studentName: '',
+                    notes: { iot: '', sec: '', ai: '', panel: '' },
+                    checklist: { charged: false, pack: false, login: false }
+                };
+                window.renderView('login');
+            } catch(e) {
+                console.error("Logout failed", e);
+            }
         };
 
         window.renderView = (viewName) => {
@@ -283,7 +292,11 @@
             } else {
                 header.classList.remove('hidden');
                 nav.classList.remove('hidden');
-                document.getElementById('student-id-display').textContent = `ID: ${studentId}`;
+                
+                const nameDisplay = document.getElementById('student-name-display');
+                if (nameDisplay) {
+                     nameDisplay.textContent = `Student: ${appData.studentName || 'Guest'}`;
+                }
             }
             
             // Update Navigation State
@@ -309,14 +322,14 @@
         };
 
         window.toggleCheck = (key) => {
-            if (!currentUser || !studentId) return;
+            if (!currentUser) return;
             appData.checklist[key] = !appData.checklist[key];
             window.renderView('prep'); 
             saveToCloud();
         };
 
         window.saveNote = (key, value) => {
-            if (!currentUser || !studentId) return;
+            if (!currentUser) return;
             appData.notes[key] = value;
             updateSyncStatus('syncing');
             clearTimeout(saveTimeout);
@@ -330,7 +343,7 @@
             const n2 = appData.notes.sec || "No notes.";
             const n3 = appData.notes.ai || "No notes.";
             const n4 = appData.notes.panel || "No notes.";
-            const fullText = `MY CONVENTION NOTES\n\n[IoT Innovation]\n${n1}\n\n[Secure the Network]\n${n2}\n\n[AI for Good]\n${n3}\n\n[Panel]\n${n4}`;
+            const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT Innovation]\n${n1}\n\n[Secure the Network]\n${n2}\n\n[AI for Good]\n${n3}\n\n[Panel]\n${n4}`;
 
             if (navigator.clipboard && navigator.clipboard.writeText) {
                  navigator.clipboard.writeText(fullText).then(() => {
@@ -363,10 +376,9 @@
         // --- INTERNAL HELPERS ---
         
         async function saveToCloud() {
-            if (!currentUser || !studentId) return;
+            if (!currentUser) return;
             try {
-                // Using PUBLIC path for sharing based on ID
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', currentUser.uid);
                 await setDoc(docRef, appData, { merge: true });
                 updateSyncStatus('online');
             } catch (e) {
@@ -391,18 +403,22 @@
                 <div class="h-full flex flex-col items-center justify-center p-6 login-bg rounded-xl">
                     <div class="w-full max-w-sm text-center">
                         <div class="mb-8">
-                            <i class="fas fa-fingerprint text-5xl text-blue-500 mb-4 neon-text"></i>
-                            <h2 class="text-3xl font-bold text-white">Student Login</h2>
-                            <p class="text-slate-400 mt-2">Enter your School ID to sync your notes across devices.</p>
+                            <i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i>
+                            <h2 class="text-3xl font-bold text-white">NPH TechCon</h2>
+                            <p class="text-slate-400 mt-2">Sign in to sync your convention notes.</p>
                         </div>
                         <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
-                            <label class="block text-left text-xs font-bold text-slate-400 uppercase mb-2">Student ID</label>
-                            <input type="text" id="student-id-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none text-center font-mono text-lg tracking-widest" placeholder="12345">
-                            <button onclick="window.login()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg mt-4 transition-all shadow-lg shadow-blue-500/30">
-                                ACCESS APP <i class="fas fa-arrow-right ml-2"></i>
+                            <div class="mb-4">
+                                <label class="block text-left text-xs font-bold text-slate-400 uppercase mb-2">Your Name</label>
+                                <input type="text" id="student-name-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="Jane Doe">
+                            </div>
+                            
+                            <button onclick="window.login()" class="w-full bg-white hover:bg-slate-100 text-slate-900 font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2">
+                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5">
+                                Sign in with Google
                             </button>
                         </div>
-                        <p class="text-xs text-slate-500 mt-6">Navajo Pine High School • TechCon 2025</p>
+                        <p class="text-xs text-slate-500 mt-6">Navajo Pine High School • 2025</p>
                     </div>
                 </div>
             `;
@@ -463,6 +479,30 @@
             const isPack = appData.checklist?.pack || false;
             const isLogin = appData.checklist?.login || false;
 
+            // List of questions
+            const questions = [
+                "Do I really need a college degree, or are certifications enough?",
+                "How did you get your very first job in tech?",
+                "What does a 'bad day' at work look like for you?",
+                "What classes in high school actually helped you the most?",
+                "What coding language should a beginner learn first?",
+                "Is AI going to replace entry-level programming jobs?",
+                "What do you look for when hiring an intern?",
+                "How important are 'soft skills' compared to technical skills?",
+                "What is the biggest mistake you made early in your career?",
+                "How do you handle stress and avoid burnout?",
+                "Which specific certifications are actually worth the money?",
+                "Did you know exactly what you wanted to do when you were my age?",
+                "What is a realistic salary for an entry-level position in this field?",
+                "How do you keep up with how fast technology changes?",
+                "Do you prefer working remotely or in an office?",
+                "What is the coolest project you have ever worked on?",
+                "How can I build a portfolio if I don't have any job experience yet?",
+                "Is cybersecurity harder to get into than software engineering?",
+                "What computer specs do you recommend for a student starting out?",
+                "Who is your role model in the tech industry?"
+            ];
+
             return `
                 <div class="space-y-6 fade-in pt-4">
                     <div class="text-center mb-6">
@@ -517,21 +557,14 @@
                         <h3 class="text-amber-400 font-bold mb-4 flex items-center">
                             <i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas
                         </h3>
-                        <p class="text-xs text-slate-400 mb-4">Don't know what to ask the pros? Try these:</p>
+                        <p class="text-xs text-slate-400 mb-4">Don't know what to ask the pros? Scroll to see more:</p>
                         
-                        <div class="space-y-3">
-                            <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group">
-                                <p class="text-sm text-slate-300 group-hover:text-white">"Do I really need a college degree, or are certifications enough?"</p>
-                            </div>
-                            <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group">
-                                <p class="text-sm text-slate-300 group-hover:text-white">"How did you get your very first job in tech?"</p>
-                            </div>
-                            <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group">
-                                <p class="text-sm text-slate-300 group-hover:text-white">"What does a 'bad day' at work look like for you?"</p>
-                            </div>
-                             <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group">
-                                <p class="text-sm text-slate-300 group-hover:text-white">"What classes in high school actually helped you the most?"</p>
-                            </div>
+                        <div class="space-y-3 max-h-80 overflow-y-auto pr-2">
+                            ${questions.map(q => `
+                                <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group">
+                                    <p class="text-sm text-slate-300 group-hover:text-white">"${q}"</p>
+                                </div>
+                            `).join('')}
                         </div>
                     </div>
                     <!-- Departure Alert -->
