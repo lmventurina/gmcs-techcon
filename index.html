@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPH TechCon V3</title>
+    <title>NPH TechCon V4</title>
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%233b82f6%22/><text x=%2250%22 y=%2265%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22>NPH</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -28,6 +28,7 @@
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .login-bg { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
+        .teacher-bg { background: radial-gradient(circle at center, #371b04 0%, #0f172a 100%); }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
@@ -35,12 +36,22 @@
 
     <!-- Header -->
     <header id="app-header" class="bg-slate-900 border-b border-slate-800 p-4 shadow-lg z-20 hidden">
-        <div class="flex justify-between items-center max-w-2xl mx-auto">
+        <div class="flex justify-between items-center max-w-4xl mx-auto w-full">
             <div>
-                <h1 class="text-xl font-bold text-white tracking-wide">NPH <span class="text-blue-500">TechCon</span></h1>
-                <p id="student-name-display" class="text-xs text-slate-400">Student: ...</p>
+                <h1 class="text-xl font-bold text-white tracking-wide">NPH <span id="header-highlight" class="text-blue-500">TechCon</span></h1>
+                <p id="header-subtitle" class="text-xs text-slate-400">Student: ...</p>
             </div>
             <div class="text-right flex items-center gap-2">
+                <!-- Teacher Actions -->
+                <div id="teacher-actions" class="hidden mr-2">
+                    <button onclick="window.exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">
+                        <i class="fas fa-file-csv mr-1"></i> Export
+                    </button>
+                    <button onclick="window.refreshTeacherData()" class="text-slate-400 hover:text-white px-2">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+
                 <!-- Sync Status Indicator -->
                 <div id="sync-status" class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded border border-slate-700 transition-colors">
                     <i class="fas fa-circle-notch fa-spin mr-1"></i> CONNECTING
@@ -53,20 +64,19 @@
     </header>
 
     <!-- Main Content Area -->
-    <main id="app-content" class="flex-1 overflow-y-auto p-4 pb-24 max-w-2xl mx-auto w-full relative">
+    <main id="app-content" class="flex-1 overflow-y-auto p-4 pb-24 max-w-4xl mx-auto w-full relative">
         <!-- Content injected via JS -->
         <div class="flex items-center justify-center h-full text-slate-500">
             <div class="text-center">
                 <i class="fas fa-circle-notch fa-spin text-3xl mb-4 text-blue-500"></i>
                 <p>Loading...</p>
-                <p class="text-xs mt-2 text-slate-600">Checking Connectivity...</p>
             </div>
         </div>
     </main>
 
-    <!-- Bottom Navigation -->
+    <!-- Bottom Navigation (Student Only) -->
     <nav id="app-nav" class="bg-slate-900/95 backdrop-blur border-t border-slate-800 fixed bottom-0 w-full z-30 pb-safe hidden">
-        <div class="flex justify-around items-center h-16 max-w-2xl mx-auto">
+        <div class="flex justify-around items-center h-16 max-w-4xl mx-auto">
             <button onclick="window.renderView('home')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-home">
                 <i class="fas fa-home text-lg mb-1"></i><span class="text-[10px] font-medium">Home</span>
             </button>
@@ -82,6 +92,25 @@
         </div>
     </nav>
 
+    <!-- Teacher Modal -->
+    <div id="modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 w-full max-w-2xl rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/50 rounded-t-2xl">
+                <div>
+                    <h2 class="text-xl font-bold text-white" id="modal-title">Student Name</h2>
+                    <p class="text-xs text-slate-400" id="modal-id">ID: ...</p>
+                </div>
+                <button onclick="window.closeModal()" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-8 h-8 rounded-full transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-6" id="modal-content"></div>
+            <div class="p-4 border-t border-slate-700 bg-slate-800/30 rounded-b-2xl flex justify-end">
+                <button onclick="window.closeModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Notification Toast -->
     <div id="toast" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none z-50 flex items-center gap-2">
         <i class="fas fa-check-circle"></i> <span id="toast-msg">Saved!</span>
@@ -89,13 +118,12 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // Removed Auth imports as we are using a custom identification system
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- FIREBASE SETUP V3 ---
+        // --- CONFIGURATION ---
         const firebaseConfig = {
             apiKey: "AIzaSyCIqh4WFNa5OarJuiE_28T196AesGJez-4",
-            authDomain: "techcon-8b01e.firebaseapp.com", 
+            authDomain: "techcon-8b01e.firebaseapp.com",
             projectId: "techcon-8b01e",
             storageBucket: "techcon-8b01e.firebasestorage.app",
             messagingSenderId: "535782934014",
@@ -104,23 +132,139 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        // const auth = getAuth(app); // Auth not needed for this manual method
         const db = getFirestore(app);
         const appId = 'nph-techcon-v2';
 
-        let currentEmail = null; 
+        // --- STATE ---
+        let userMode = 'student'; // 'student' or 'teacher'
+        let currentEmail = null;
         let currentView = 'login';
         let isGuestMode = false;
         
-        // Local state cache
         let appData = {
             studentName: '',
             notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
             checklist: { charged: false, pack: false, login: false }
         };
 
+        let teacherData = []; // Stores all student profiles
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
+
+        // --- INIT ---
+        const initApp = () => {
+            const savedEmail = localStorage.getItem('nph_student_email');
+            const savedName = localStorage.getItem('nph_student_name');
+            
+            if (savedEmail && savedName) {
+                currentEmail = savedEmail;
+                appData.studentName = savedName;
+                startDataListener(currentEmail);
+                window.renderView('home');
+            } else {
+                window.renderView('login');
+            }
+        };
+
+        // --- STUDENT LOGIC ---
+        const startDataListener = (emailKey) => {
+            if (isGuestMode) {
+                const saved = localStorage.getItem('nph_guest_data');
+                if (saved) { try { appData = JSON.parse(saved); updateHeader(); } catch(e) {} }
+                updateSyncStatus('guest');
+                return;
+            }
+            if (!emailKey) return;
+            
+            const safeId = emailKey.replace(/\//g, '_'); 
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
+            
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+
+            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    appData = { ...appData, ...docSnap.data() };
+                    updateHeader();
+                    if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
+                } else {
+                    saveToCloud();
+                }
+                updateSyncStatus('online');
+            }, (error) => {
+                console.error("Sync error", error);
+                updateSyncStatus('offline');
+                if(!isGuestMode) {
+                    const guestConfirm = confirm("Cloud Connection Failed. Switch to Guest Mode?");
+                    if(guestConfirm) window.enableGuestMode(appData.studentName);
+                }
+            });
+        };
+
+        async function saveToCloud() {
+            if (isGuestMode) {
+                localStorage.setItem('nph_guest_data', JSON.stringify(appData));
+                updateSyncStatus('guest');
+                return;
+            }
+            if (!currentEmail) return;
+            try {
+                const safeId = currentEmail.replace(/\//g, '_');
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
+                await setDoc(docRef, appData, { merge: true });
+                updateSyncStatus('online');
+            } catch (e) {
+                console.error("Save failed", e);
+                updateSyncStatus('offline');
+            }
+        }
+
+        // --- TEACHER LOGIC ---
+        window.attemptTeacherLogin = () => {
+            const pin = document.getElementById('teacher-pin').value;
+            if (pin === "NPH2025") {
+                userMode = 'teacher';
+                document.getElementById('teacher-login-error').classList.add('hidden');
+                window.renderView('teacher-dashboard');
+                window.refreshTeacherData();
+            } else {
+                document.getElementById('teacher-login-error').classList.remove('hidden');
+            }
+        };
+
+        window.refreshTeacherData = async () => {
+            try {
+                updateSyncStatus('syncing');
+                const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'student_profiles'));
+                const querySnapshot = await getDocs(q);
+                teacherData = [];
+                querySnapshot.forEach((doc) => {
+                    teacherData.push({ id: doc.id, ...doc.data() });
+                });
+                if(currentView === 'teacher-dashboard') renderTeacherTable(teacherData);
+                updateSyncStatus('online');
+            } catch (e) {
+                console.error("Teacher Fetch Error", e);
+                updateSyncStatus('offline');
+            }
+        };
+
+        // --- SHARED UI LOGIC ---
+        function updateHeader() {
+            const subtitle = document.getElementById('header-subtitle');
+            const title = document.getElementById('header-highlight');
+            
+            if (userMode === 'student') {
+                title.className = "text-blue-500";
+                title.innerText = "TechCon";
+                subtitle.innerText = `Student: ${appData.studentName || 'Guest'}`;
+                document.getElementById('teacher-actions').classList.add('hidden');
+            } else {
+                title.className = "text-amber-500";
+                title.innerText = "Faculty";
+                subtitle.innerText = "Monitor Dashboard";
+                document.getElementById('teacher-actions').classList.remove('hidden');
+            }
+        }
 
         const updateSyncStatus = (status) => {
             const el = document.getElementById('sync-status');
@@ -141,86 +285,63 @@
             }
         };
 
-        const startDataListener = (emailKey) => {
-            if (isGuestMode) {
-                const saved = localStorage.getItem('nph_guest_data');
-                if (saved) {
-                    try { appData = JSON.parse(saved); updateHeaderName(); } catch(e) {}
-                }
-                updateSyncStatus('guest');
-                return;
-            }
-
-            if (!emailKey) return;
+        window.renderView = (viewName) => {
+            currentView = viewName;
+            const container = document.getElementById('app-content');
+            const header = document.getElementById('app-header');
+            const nav = document.getElementById('app-nav');
             
-            // Clean the email to be safe for document IDs
-            const safeId = emailKey.replace(/\//g, '_'); 
-            
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
-            
-            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            updateHeader();
 
-            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    appData = { ...appData, ...docSnap.data() };
-                    updateHeaderName();
-                    // Refresh view to show loaded data
-                    if (currentView !== 'login') window.renderView(currentView);
-                } else {
-                    saveToCloud();
-                }
-                updateSyncStatus('online');
-            }, (error) => {
-                console.error("Sync error", error);
-                // Fallback if cloud fails completely
-                updateSyncStatus('offline');
-                const guestConfirm = confirm("Cloud Connection Failed. Switch to Guest Mode?");
-                if(guestConfirm) window.enableGuestMode(appData.studentName);
-            });
-        };
-
-        function updateHeaderName() {
-            const nameDisplay = document.getElementById('student-name-display');
-            if (nameDisplay && appData.studentName) {
-                nameDisplay.textContent = `Student: ${appData.studentName}`;
-            }
-        }
-
-        // Init: Check for saved session
-        const initApp = () => {
-            const savedEmail = localStorage.getItem('nph_student_email');
-            const savedName = localStorage.getItem('nph_student_name');
-            
-            if (savedEmail && savedName) {
-                currentEmail = savedEmail;
-                appData.studentName = savedName;
-                startDataListener(currentEmail);
-                window.renderView('home');
+            // Toggle Navigation Visibility
+            if (viewName === 'login' || viewName === 'teacher-login') {
+                header.classList.add('hidden');
+                nav.classList.add('hidden');
             } else {
-                window.renderView('login');
+                header.classList.remove('hidden');
+                if (userMode === 'student') nav.classList.remove('hidden');
+                else nav.classList.add('hidden'); // No bottom nav for teachers
             }
+
+            // Student Nav State
+            if (userMode === 'student') {
+                document.querySelectorAll('.nav-btn').forEach(btn => {
+                    btn.classList.remove('text-blue-400');
+                    btn.classList.add('text-slate-400');
+                });
+                const activeBtn = document.getElementById(`nav-${viewName}`);
+                if(activeBtn) {
+                    activeBtn.classList.remove('text-slate-400');
+                    activeBtn.classList.add('text-blue-400');
+                }
+            }
+
+            // Route Render
+            if (viewName === 'login') container.innerHTML = getLoginView();
+            else if (viewName === 'teacher-login') container.innerHTML = getTeacherLoginView();
+            else if (viewName === 'teacher-dashboard') container.innerHTML = getTeacherDashboardView();
+            else if (viewName === 'home') container.innerHTML = getHomeView();
+            else if (viewName === 'prep') container.innerHTML = getPrepView();
+            else if (viewName === 'agenda') container.innerHTML = getAgendaView();
+            else if (viewName === 'passport') container.innerHTML = getPassportView();
+            
+            // Post-render actions
+            if (viewName === 'teacher-dashboard') renderTeacherTable(teacherData);
         };
 
-        // --- GLOBAL FUNCTIONS ---
-
+        // --- ACTIONS ---
         window.login = async () => {
-            const nameInput = document.getElementById('student-name-input');
-            const emailInput = document.getElementById('student-email-input');
+            const name = document.getElementById('student-name-input').value.trim();
+            const email = document.getElementById('student-email-input').value.trim().toLowerCase();
             
-            const name = nameInput.value.trim();
-            const email = emailInput.value.trim().toLowerCase();
-            
-            if (name.length === 0 || email.length === 0) {
-                alert("Please enter both your Name and School Email.");
-                return;
-            }
+            if (name.length === 0 || email.length === 0) { alert("Please enter both Name and Email."); return; }
 
-            // Save session
             localStorage.setItem('nph_student_email', email);
             localStorage.setItem('nph_student_name', name);
             
             appData.studentName = name; 
             currentEmail = email;
+            userMode = 'student';
             
             startDataListener(email);
             window.renderView('home');
@@ -228,6 +349,7 @@
 
         window.enableGuestMode = (name) => {
             isGuestMode = true;
+            userMode = 'student';
             appData.studentName = name || "Guest";
             startDataListener(null); 
             window.renderView('home');
@@ -239,298 +361,194 @@
             localStorage.removeItem('nph_student_name');
             currentEmail = null;
             isGuestMode = false;
-            
+            userMode = 'student';
             if (unsubscribeSnapshot) unsubscribeSnapshot();
-            
-            appData = {
-                studentName: '',
-                notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
-                checklist: { charged: false, pack: false, login: false }
-            };
+            appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false } };
             window.renderView('login');
         };
 
-        window.renderView = (viewName) => {
-            currentView = viewName;
-            const container = document.getElementById('app-content');
-            const header = document.getElementById('app-header');
-            const nav = document.getElementById('app-nav');
-            
-            if (viewName === 'login') {
-                header.classList.add('hidden');
-                nav.classList.add('hidden');
-                container.innerHTML = getLoginView();
+        window.toggleCheck = (key) => { appData.checklist[key] = !appData.checklist[key]; window.renderView('prep'); saveToCloud(); };
+        window.saveNote = (key, value) => { 
+            appData.notes[key] = value; 
+            updateSyncStatus('syncing'); 
+            clearTimeout(saveTimeout); 
+            saveTimeout = setTimeout(saveToCloud, 500); 
+        };
+
+        // --- TEACHER HELPERS ---
+        function renderTeacherTable(data) {
+            const tbody = document.getElementById('teacher-table-body');
+            if(!tbody) return;
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">No students found yet.</td></tr>`;
                 return;
-            } else {
-                header.classList.remove('hidden');
-                nav.classList.remove('hidden');
-                updateHeaderName();
             }
-            
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('text-blue-400');
-                btn.classList.add('text-slate-400');
+
+            // Stats
+            document.getElementById('stat-count').innerText = data.length;
+            document.getElementById('stat-active').innerText = data.filter(s => {
+                const n = s.notes || {};
+                return (n.iot || n.sec || n.ai || n.panel);
+            }).length;
+
+            data.forEach(student => {
+                const notes = student.notes || {};
+                const has = (txt) => txt && txt.length > 2 ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-600">-</span>';
+                
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-700/50 transition-colors border-b border-slate-700/50 last:border-0";
+                tr.innerHTML = `
+                    <td class="p-3 font-medium text-white">
+                        <div>${student.studentName || 'Unknown'}</div>
+                        <div class="text-xs text-slate-500 font-mono truncate max-w-[150px]">${student.id}</div>
+                    </td>
+                    <td class="p-3 text-center">${has(notes.iot)}</td>
+                    <td class="p-3 text-center">${has(notes.sec)}</td>
+                    <td class="p-3 text-center">${has(notes.ai)}</td>
+                    <td class="p-3 text-center">${has(notes.panel)}</td>
+                    <td class="p-3 text-right">
+                        <button onclick="window.viewStudent('${student.id}')" class="text-amber-500 hover:text-white hover:bg-amber-600 px-2 py-1 rounded text-xs font-bold uppercase">View</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
             });
-            const activeBtn = document.getElementById(`nav-${viewName}`);
-            if(activeBtn) {
-                activeBtn.classList.remove('text-slate-400');
-                activeBtn.classList.add('text-blue-400');
-            }
+        }
 
-            if (viewName === 'home') container.innerHTML = getHomeView();
-            else if (viewName === 'prep') container.innerHTML = getPrepView();
-            else if (viewName === 'agenda') container.innerHTML = getAgendaView();
-            else if (viewName === 'passport') container.innerHTML = getPassportView();
+        window.viewStudent = (id) => {
+            const student = teacherData.find(s => s.id === id);
+            if (!student) return;
+            document.getElementById('modal-title').innerText = student.studentName || 'Unknown';
+            document.getElementById('modal-id').innerText = student.id;
+            const n = student.notes || {};
+            const content = document.getElementById('modal-content');
             
-            // Do not force scroll top on re-renders (prevents jumping while typing)
-            // container.scrollTop = 0; 
+            const renderBlock = (title, text, color) => `
+                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <h4 class="text-${color}-400 font-bold mb-2 text-sm uppercase">${title}</h4>
+                    <p class="text-slate-200 text-sm whitespace-pre-wrap">${text && text.length > 0 ? text : '<span class="text-slate-600 italic">Empty</span>'}</p>
+                </div>`;
+
+            content.innerHTML = `
+                ${renderBlock('IoT Innovation', n.iot, 'purple')}
+                ${renderBlock('Secure the Network', n.sec, 'red')}
+                ${renderBlock('AI for Good', n.ai, 'blue')}
+                ${renderBlock('Professional Panel', n.panel, 'emerald')}
+                ${renderBlock('Custom Questions', n.custom_q, 'amber')}
+            `;
+            document.getElementById('modal').classList.remove('hidden');
         };
 
-        window.toggleCheck = (key) => {
-            appData.checklist[key] = !appData.checklist[key];
-            window.renderView('prep'); 
-            saveToCloud();
+        window.closeModal = () => document.getElementById('modal').classList.add('hidden');
+
+        window.exportCSV = () => {
+            if (teacherData.length === 0) { alert("No data."); return; }
+            let csv = "Name,Email_ID,IoT Notes,Security Notes,AI Notes,Panel Notes,Custom Questions\n";
+            teacherData.forEach(s => {
+                const n = s.notes || {};
+                const clean = (txt) => `"${(txt || '').replace(/"/g, '""')}"`;
+                csv += `${clean(s.studentName)},${clean(s.id)},${clean(n.iot)},${clean(n.sec)},${clean(n.ai)},${clean(n.panel)},${clean(n.custom_q)}\n`;
+            });
+            const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+            const a = document.createElement('a');
+            a.setAttribute('hidden', ''); a.setAttribute('href', url); a.setAttribute('download', 'nph_techcon_data.csv');
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
         };
 
-        window.saveNote = (key, value) => {
-            appData.notes[key] = value;
-            updateSyncStatus('syncing');
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => {
-                saveToCloud();
-            }, 500);
+        window.filterTeacherList = (term) => {
+            const lower = term.toLowerCase();
+            const filtered = teacherData.filter(s => (s.studentName && s.studentName.toLowerCase().includes(lower)) || (s.id && s.id.toLowerCase().includes(lower)));
+            renderTeacherTable(filtered);
         };
 
+        // --- CLIPBOARD ---
         window.copyAllNotes = () => {
-            const n1 = appData.notes.iot || "No notes.";
-            const n2 = appData.notes.sec || "No notes.";
-            const n3 = appData.notes.ai || "No notes.";
-            const n4 = appData.notes.panel || "No notes.";
-            const n5 = appData.notes.custom_q || "No custom questions.";
-            const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT Innovation]\n${n1}\n\n[Secure the Network]\n${n2}\n\n[AI for Good]\n${n3}\n\n[Panel]\n${n4}\n\n[My Questions]\n${n5}`;
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                 navigator.clipboard.writeText(fullText).then(() => {
-                    showToast("Copied to Clipboard!");
-                }).catch(err => {
-                    fallbackCopy(fullText);
-                });
-            } else {
-                fallbackCopy(fullText);
-            }
+            const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT]\n${appData.notes.iot}\n\n[Security]\n${appData.notes.sec}\n\n[AI]\n${appData.notes.ai}\n\n[Panel]\n${appData.notes.panel}\n\n[Qs]\n${appData.notes.custom_q}`;
+            const textArea = document.createElement("textarea");
+            textArea.value = fullText; textArea.style.position = "fixed"; document.body.appendChild(textArea); textArea.focus(); textArea.select();
+            try { document.execCommand("copy"); showToast("Copied!"); } catch (err) { showToast("Copy Failed"); }
+            document.body.removeChild(textArea);
         };
 
-        function fallbackCopy(text) {
-             const textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                document.execCommand("copy");
-                showToast("Copied to Clipboard!");
-            } catch (err) {
-                showToast("Copy Failed");
-            }
-            document.body.removeChild(textArea);
-        }
-
-        async function saveToCloud() {
-            if (isGuestMode) {
-                localStorage.setItem('nph_guest_data', JSON.stringify(appData));
-                updateSyncStatus('guest');
-                return;
-            }
-
-            if (!currentEmail) return;
-            try {
-                const safeId = currentEmail.replace(/\//g, '_');
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
-                await setDoc(docRef, appData, { merge: true });
-                updateSyncStatus('online');
-            } catch (e) {
-                console.error("Save failed", e);
-                updateSyncStatus('offline');
-            }
-        }
-
-        function showToast(message) {
+        function showToast(msg) {
             const toast = document.getElementById('toast');
-            document.getElementById('toast-msg').innerText = message;
+            document.getElementById('toast-msg').innerText = msg;
             toast.classList.remove('opacity-0');
-            setTimeout(() => {
-                toast.classList.add('opacity-0');
-            }, 2000);
+            setTimeout(() => toast.classList.add('opacity-0'), 2000);
         }
 
-        // --- VIEW GENERATORS ---
-
+        // --- VIEWS ---
         function getLoginView() {
             return `
                 <div class="h-full flex flex-col items-center justify-center p-6 login-bg rounded-xl">
                     <div class="w-full max-w-sm text-center">
-                        <div class="mb-8">
-                            <i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i>
-                            <h2 class="text-3xl font-bold text-white">NPH TechCon</h2>
-                            <p class="text-slate-400 mt-2">Enter your info to sync notes.</p>
-                        </div>
+                        <div class="mb-8"><i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i><h2 class="text-3xl font-bold text-white">NPH TechCon</h2><p class="text-slate-400 mt-2">Enter your info to sync notes.</p></div>
                         <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl text-left">
-                            <div class="mb-4">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">First & Last Name</label>
-                                <input type="text" id="student-name-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="Jane Doe">
-                            </div>
-                            <div class="mb-6">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">School Email</label>
-                                <input type="email" id="student-email-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="jane.doe@school.edu">
-                            </div>
-                            
-                            <button onclick="window.login()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mb-4">
-                                Start App <i class="fas fa-arrow-right ml-2"></i>
-                            </button>
-                            
-                            <button onclick="window.enableGuestMode(document.getElementById('student-name-input').value)" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold py-3 rounded-lg transition-all">
-                                <i class="fas fa-hdd mr-2"></i> Guest Mode (No Sync)
-                            </button>
+                            <div class="mb-4"><label class="block text-xs font-bold text-slate-400 uppercase mb-2">First & Last Name</label><input type="text" id="student-name-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="Jane Doe"></div>
+                            <div class="mb-6"><label class="block text-xs font-bold text-slate-400 uppercase mb-2">School Email</label><input type="email" id="student-email-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="jane.doe@school.edu"></div>
+                            <button onclick="window.login()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mb-4">Start App <i class="fas fa-arrow-right ml-2"></i></button>
+                            <button onclick="window.enableGuestMode(document.getElementById('student-name-input').value)" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold py-3 rounded-lg transition-all"><i class="fas fa-hdd mr-2"></i> Guest Mode</button>
                         </div>
-                        <p class="text-xs text-slate-500 mt-6">Navajo Pine High School • 2025</p>
+                        <p class="text-center mt-8"><button onclick="window.renderView('teacher-login')" class="text-xs text-slate-600 hover:text-amber-500 transition-colors">Faculty Access</button></p>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
-        function getHomeView() {
+        function getTeacherLoginView() {
             return `
-                <div class="space-y-6 fade-in pt-4">
-                    <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden">
-                        <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
-                        <h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2>
-                        <p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p>
-                        <div class="inline-block px-4 py-1 rounded-full bg-slate-800 border border-slate-600 text-xs font-mono text-slate-300">
-                            <i class="far fa-calendar-alt mr-2"></i>Thursday, Jan 15
-                        </div>
+                <div class="flex flex-col items-center justify-center h-full teacher-bg rounded-xl border border-slate-800">
+                    <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-2xl w-full max-w-md text-center">
+                        <div class="mb-6"><i class="fas fa-chalkboard-teacher text-4xl text-amber-500"></i></div>
+                        <h2 class="text-2xl font-bold text-white mb-2">Faculty Access</h2>
+                        <p class="text-slate-400 text-sm mb-6">Enter event PIN to view student data.</p>
+                        <input type="password" id="teacher-pin" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-amber-500 focus:outline-none mb-4 text-center tracking-widest text-lg" placeholder="••••">
+                        <button onclick="window.attemptTeacherLogin()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg transition-all">Access Dashboard</button>
+                        <p id="teacher-login-error" class="text-red-400 text-xs mt-3 hidden">Incorrect PIN.</p>
+                        <button onclick="window.renderView('login')" class="text-slate-500 text-xs mt-6 hover:text-white">Back to Student Login</button>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <button onclick="window.renderView('prep')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-blue-500 transition-all text-left group">
-                            <div class="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-500/20">
-                                <i class="fas fa-clipboard-check text-blue-400"></i>
-                            </div>
-                            <h3 class="font-bold text-slate-200">Pre-Check</h3>
-                            <p class="text-xs text-slate-500 mt-1">Get ready</p>
-                        </button>
-                        <button onclick="window.renderView('passport')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-emerald-500 transition-all text-left group">
-                            <div class="bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-500/20">
-                                <i class="fas fa-pen-fancy text-emerald-400"></i>
-                            </div>
-                            <h3 class="font-bold text-slate-200">Notes</h3>
-                            <p class="text-xs text-slate-500 mt-1">Draft reflection</p>
-                        </button>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 ml-1">Learning Rotations</h3>
-                        <div class="space-y-3">
-                            <div class="flex items-center p-3 bg-slate-800 rounded-lg border border-slate-700/50">
-                                <div class="bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-microchip text-purple-400"></i></div>
-                                <div><h4 class="font-bold text-slate-200 text-sm">IoT Innovation</h4><p class="text-xs text-slate-500">Connected devices</p></div>
-                            </div>
-                            <div class="flex items-center p-3 bg-slate-800 rounded-lg border border-slate-700/50">
-                                <div class="bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-shield-alt text-red-400"></i></div>
-                                <div><h4 class="font-bold text-slate-200 text-sm">Secure the Network</h4><p class="text-xs text-slate-500">Cybersecurity</p></div>
-                            </div>
-                            <div class="flex items-center p-3 bg-slate-800 rounded-lg border border-slate-700/50">
-                                <div class="bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-robot text-blue-400"></i></div>
-                                <div><h4 class="font-bold text-slate-200 text-sm">AI for Good</h4><p class="text-xs text-slate-500">Artificial Intelligence</p></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+                </div>`;
         }
 
+        function getTeacherDashboardView() {
+            return `
+                <div class="h-full flex flex-col fade-in">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><p class="text-slate-400 text-[10px] uppercase font-bold">Students</p><h3 class="text-2xl font-bold text-white" id="stat-count">0</h3></div>
+                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><p class="text-slate-400 text-[10px] uppercase font-bold">Active</p><h3 class="text-2xl font-bold text-emerald-400" id="stat-active">0</h3></div>
+                    </div>
+                    <div class="flex-1 bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
+                        <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                            <h3 class="font-bold text-white text-sm"><i class="fas fa-users mr-2"></i> Responses</h3>
+                            <input type="text" onkeyup="window.filterTeacherList(this.value)" placeholder="Search..." class="bg-slate-900 border border-slate-600 rounded px-3 py-1 text-xs text-white focus:border-amber-500 focus:outline-none">
+                        </div>
+                        <div class="overflow-y-auto flex-1 p-0">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-slate-900 text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Panel</th><th class="p-3 text-right">Action</th></tr></thead>
+                                <tbody id="teacher-table-body" class="divide-y divide-slate-700 text-sm text-slate-300"><tr><td colspan="6" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        // Student Views (Home, Prep, Agenda, Passport) retained from V3
+        function getHomeView() {
+            return `<div class="space-y-6 fade-in pt-4"><div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden"><div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div><h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2><p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p></div><div class="grid grid-cols-2 gap-4"><button onclick="window.renderView('prep')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-blue-500 transition-all text-left group"><div class="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-500/20"><i class="fas fa-clipboard-check text-blue-400"></i></div><h3 class="font-bold text-slate-200">Pre-Check</h3><p class="text-xs text-slate-500 mt-1">Get ready</p></button><button onclick="window.renderView('passport')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-emerald-500 transition-all text-left group"><div class="bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-500/20"><i class="fas fa-pen-fancy text-emerald-400"></i></div><h3 class="font-bold text-slate-200">Notes</h3><p class="text-xs text-slate-500 mt-1">Draft reflection</p></button></div></div>`;
+        }
         function getPrepView() {
             const isCharged = appData.checklist?.charged || false;
             const isPack = appData.checklist?.pack || false;
             const isLogin = appData.checklist?.login || false;
-            const questions = [
-                "Do I really need a college degree, or are certifications enough?",
-                "How did you get your very first job in tech?",
-                "What does a 'bad day' at work look like for you?",
-                "What classes in high school actually helped you the most?",
-                "What coding language should a beginner learn first?",
-                "Is AI going to replace entry-level programming jobs?",
-                "What do you look for when hiring an intern?",
-                "How important are 'soft skills' compared to technical skills?",
-                "What is the biggest mistake you made early in your career?",
-                "How do you handle stress and avoid burnout?"
-            ];
-
-            return `
-                <div class="space-y-6 fade-in pt-4">
-                    <div class="text-center mb-6"><h2 class="text-2xl font-bold text-white">Get Ready</h2><p class="text-sm text-slate-400">Complete this checklist.</p></div>
-                    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg">
-                        <h3 class="text-blue-400 font-bold mb-4 flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
-                        <div class="space-y-4">
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Charge Laptop to 100%</span><span class="block text-xs text-slate-500">Crucial: Power outlets may be limited.</span></div></label>
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Pack Laptop Charger</span><span class="block text-xs text-slate-500">Bring it just in case.</span></div></label>
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Verify School Login</span><span class="block text-xs text-slate-500">Ensure your password works.</span></div></label>
-                        </div>
-                    </div>
-                    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg">
-                        <h3 class="text-amber-400 font-bold mb-4 flex items-center"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
-                        <p class="text-xs text-slate-400 mb-4">Don't know what to ask? Scroll to see more:</p>
-                        <div class="space-y-3 max-h-60 overflow-y-auto pr-2 mb-4">
-                            ${questions.map(q => `<div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group"><p class="text-sm text-slate-300 group-hover:text-white">"${q}"</p></div>`).join('')}
-                        </div>
-                        
-                        <h3 class="text-amber-400 font-bold mb-2 flex items-center pt-4 border-t border-slate-700"><i class="fas fa-pen mr-2"></i> My Questions</h3>
-                        <p class="text-xs text-slate-400 mb-2">Write your own questions here:</p>
-                        <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-600" placeholder="I want to ask...">${appData.notes?.custom_q || ''}</textarea>
-                    </div>
-                </div>
-            `;
+            const questions = ["Do I really need a college degree, or are certifications enough?", "How did you get your very first job in tech?", "What does a 'bad day' at work look like for you?", "What classes in high school actually helped you the most?", "What coding language should a beginner learn first?", "Is AI going to replace entry-level programming jobs?", "How important are 'soft skills' compared to technical skills?", "How do you handle stress and avoid burnout?"];
+            return `<div class="space-y-6 fade-in pt-4"><div class="text-center mb-6"><h2 class="text-2xl font-bold text-white">Get Ready</h2></div><div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg"><h3 class="text-blue-400 font-bold mb-4 flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3><div class="space-y-4"><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Charge Laptop to 100%</span></div></label><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Pack Laptop Charger</span></div></label><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Verify School Login</span></div></label></div></div><div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg"><h3 class="text-amber-400 font-bold mb-4 flex items-center"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3><div class="space-y-3 max-h-60 overflow-y-auto pr-2 mb-4">${questions.map(q => `<div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group"><p class="text-sm text-slate-300 group-hover:text-white">"${q}"</p></div>`).join('')}</div><h3 class="text-amber-400 font-bold mb-2 flex items-center pt-4 border-t border-slate-700"><i class="fas fa-pen mr-2"></i> My Questions</h3><textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-600" placeholder="I want to ask...">${appData.notes?.custom_q || ''}</textarea></div></div>`;
         }
-
         function getAgendaView() {
-            return `
-                <div class="space-y-4 fade-in pt-4">
-                    <div class="flex justify-between items-end mb-2">
-                        <h2 class="text-2xl font-bold text-white">Agenda</h2>
-                        <span class="text-xs font-mono text-blue-400 bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span>
-                    </div>
-                    <div class="relative border-l-2 border-slate-700 ml-3 space-y-8 pb-4">
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-400 text-xs leading-relaxed">Meet at front entrance. Don't be late!</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:00 AM</span><i class="fas fa-map-marker-alt text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-400 text-xs leading-relaxed">GMCS Student Support Center (SSC)</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:15 AM</span><i class="fas fa-sync-alt text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Rotation 1</h3><p class="text-slate-400 text-xs leading-relaxed">IoT, Security, or AI Challenge</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">11:15 AM</span><i class="fas fa-sync-alt text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Rotation 2</h3><p class="text-slate-400 text-xs leading-relaxed">Switch stations</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">12:15 PM</span><i class="fas fa-sync-alt text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Rotation 3</h3><p class="text-slate-400 text-xs leading-relaxed">Final station</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">1:25 PM</span><i class="fas fa-users text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Professional Panel</h3><p class="text-slate-400 text-xs leading-relaxed">Industry insights & Q&A</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">2:10 PM</span><i class="fas fa-bus text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Bus Departs SSC</h3><p class="text-slate-400 text-xs leading-relaxed">Return trip to Navajo Pine HS</p></div></div>
-                    </div>
-                </div>
-            `;
+            return `<div class="space-y-4 fade-in pt-4"><div class="flex justify-between items-end mb-2"><h2 class="text-2xl font-bold text-white">Agenda</h2><span class="text-xs font-mono text-blue-400 bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span></div><div class="relative border-l-2 border-slate-700 ml-3 space-y-8 pb-4"><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-400 text-xs leading-relaxed">Meet at front entrance.</p></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:00 AM</span></div><h3 class="text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-400 text-xs leading-relaxed">SSC</p></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:15 AM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 1</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">11:15 AM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 2</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">12:15 PM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 3</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">1:25 PM</span></div><h3 class="text-white font-bold text-base mb-1">Professional Panel</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">2:10 PM</span></div><h3 class="text-white font-bold text-base mb-1">Bus Departs SSC</h3></div></div></div></div>`;
         }
-
         function getPassportView() {
-            const notes1 = appData.notes?.iot || '';
-            const notes2 = appData.notes?.sec || '';
-            const notes3 = appData.notes?.ai || '';
-            const notes4 = appData.notes?.panel || '';
-
-            return `
-                <div class="space-y-6 fade-in pt-4">
-                    <div class="text-center"><h2 class="text-2xl font-bold text-white">Digital Passport</h2><p class="text-xs text-slate-400 mt-2 max-w-xs mx-auto"><span class="text-amber-400"><i class="fas fa-exclamation-triangle"></i> Note for NPH Students:</span> This is a <strong>Draft Space</strong>. Use this to remember your thoughts!</p></div>
-                    <div class="space-y-6">
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-white">IoT Innovation</h3></div><p class="text-xs text-slate-400 mb-3">What problem were you solving?</p><textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea></div>
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Secure the Network</h3></div><p class="text-xs text-slate-400 mb-3">Why is protection important?</p><textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea></div>
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-white">AI for Good</h3></div><p class="text-xs text-slate-400 mb-3">Who benefits from your solution?</p><textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea></div>
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Professional Panel</h3></div><p class="text-xs text-slate-400 mb-3">Which career path interested you?</p><textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea></div>
-                    </div>
-                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent">
-                        <button onclick="window.copyAllNotes()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All to Clipboard</button>
-                        <p class="text-center text-[10px] text-slate-500 mt-2">Paste into your College & Career Passport later.</p>
-                    </div>
-                </div>
-            `;
+            const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
+            return `<div class="space-y-6 fade-in pt-4"><div class="text-center"><h2 class="text-2xl font-bold text-white">Digital Passport</h2><p class="text-xs text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div><div class="space-y-6"><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-white">IoT Innovation</h3></div><p class="text-xs text-slate-400 mb-3">What problem were you solving?</p><textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Secure the Network</h3></div><p class="text-xs text-slate-400 mb-3">Why is protection important?</p><textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-white">AI for Good</h3></div><p class="text-xs text-slate-400 mb-3">Who benefits from your solution?</p><textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Professional Panel</h3></div><p class="text-xs text-slate-400 mb-3">Which career path interested you?</p><textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea></div></div><div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent"><button onclick="window.copyAllNotes()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All to Clipboard</button></div></div>`;
         }
 
         // Start App
