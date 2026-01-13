@@ -43,7 +43,14 @@
             </div>
             <div class="text-right flex items-center gap-2">
                 <!-- Teacher Actions -->
-                <div id="teacher-actions" class="hidden mr-2">
+                <div id="teacher-actions" class="hidden flex items-center gap-2 mr-2">
+                    <button onclick="window.renderView('teacher-dashboard')" id="btn-dash" class="text-slate-400 hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors border border-transparent hover:border-slate-600">
+                        <i class="fas fa-list mr-1"></i> Data
+                    </button>
+                    <button onclick="window.renderView('teacher-presentation')" id="btn-slides" class="text-slate-400 hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors border border-transparent hover:border-slate-600">
+                        <i class="fas fa-chalkboard mr-1"></i> Slides
+                    </button>
+                    <div class="h-4 w-px bg-slate-700 mx-1"></div>
                     <button onclick="window.exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">
                         <i class="fas fa-file-csv mr-1"></i> Export
                     </button>
@@ -88,6 +95,9 @@
             </button>
             <button onclick="window.renderView('passport')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-passport">
                 <i class="fas fa-passport text-lg mb-1"></i><span class="text-[10px] font-medium">Passport</span>
+            </button>
+            <button onclick="window.renderView('reflection')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-reflection">
+                <i class="fas fa-star text-lg mb-1"></i><span class="text-[10px] font-medium">Reflection</span>
             </button>
         </div>
     </nav>
@@ -144,7 +154,9 @@
         let appData = {
             studentName: '',
             notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
-            checklist: { charged: false, pack: false, login: false, cisco: false }
+            checklist: { charged: false, pack: false, login: false, cisco: false },
+            reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' },
+            teacherComment: ''
         };
 
         let teacherData = []; // Stores all student profiles
@@ -183,7 +195,15 @@
 
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
-                    appData = { ...appData, ...docSnap.data() };
+                    const fetchedData = docSnap.data();
+                    // Merge deeply to avoid overwriting nested objects like reflection
+                    appData = {
+                        ...appData,
+                        ...fetchedData,
+                        reflection: { ...appData.reflection, ...(fetchedData.reflection || {}) },
+                        notes: { ...appData.notes, ...(fetchedData.notes || {}) },
+                        checklist: { ...appData.checklist, ...(fetchedData.checklist || {}) }
+                    };
                     updateHeader();
                     if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
                 } else {
@@ -266,6 +286,25 @@
             }
         };
 
+        window.saveTeacherComment = async (studentId) => {
+            const comment = document.getElementById('teacher-comment-input').value;
+            try {
+                updateSyncStatus('syncing');
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
+                await setDoc(docRef, { teacherComment: comment }, { merge: true });
+                
+                // Update local data
+                const s = teacherData.find(s => s.id === studentId);
+                if (s) s.teacherComment = comment;
+                
+                showToast("Feedback Saved!");
+                updateSyncStatus('online');
+            } catch (e) {
+                console.error("Comment save failed", e);
+                alert("Failed to save feedback.");
+            }
+        };
+
         // --- SHARED UI LOGIC ---
         function updateHeader() {
             const subtitle = document.getElementById('header-subtitle');
@@ -281,6 +320,22 @@
                 title.innerText = "Faculty";
                 subtitle.innerText = "Monitor Dashboard";
                 document.getElementById('teacher-actions').classList.remove('hidden');
+                
+                // Update active state for teacher nav
+                const btnDash = document.getElementById('btn-dash');
+                const btnSlides = document.getElementById('btn-slides');
+                
+                if(currentView === 'teacher-dashboard' && btnDash) {
+                    btnDash.classList.add('bg-slate-700', 'text-white');
+                    btnDash.classList.remove('text-slate-400');
+                    btnSlides.classList.remove('bg-slate-700', 'text-white');
+                    btnSlides.classList.add('text-slate-400');
+                } else if (currentView === 'teacher-presentation' && btnSlides) {
+                    btnSlides.classList.add('bg-slate-700', 'text-white');
+                    btnSlides.classList.remove('text-slate-400');
+                    btnDash.classList.remove('bg-slate-700', 'text-white');
+                    btnDash.classList.add('text-slate-400');
+                }
             }
         }
 
@@ -338,10 +393,12 @@
             if (viewName === 'login') container.innerHTML = getLoginView();
             else if (viewName === 'teacher-login') container.innerHTML = getTeacherLoginView();
             else if (viewName === 'teacher-dashboard') container.innerHTML = getTeacherDashboardView();
+            else if (viewName === 'teacher-presentation') container.innerHTML = getTeacherPresentationView();
             else if (viewName === 'home') container.innerHTML = getHomeView();
             else if (viewName === 'prep') container.innerHTML = getPrepView();
             else if (viewName === 'agenda') container.innerHTML = getAgendaView();
             else if (viewName === 'passport') container.innerHTML = getPassportView();
+            else if (viewName === 'reflection') container.innerHTML = getReflectionView();
             
             // Post-render actions
             if (viewName === 'teacher-dashboard') renderTeacherTable(teacherData);
@@ -381,7 +438,8 @@
             isGuestMode = false;
             userMode = 'student';
             if (unsubscribeSnapshot) unsubscribeSnapshot();
-            appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false } };
+            // Reset Data
+            appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false }, reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' }, teacherComment: '' };
             window.renderView('login');
         };
 
@@ -390,9 +448,27 @@
             appData.notes[key] = value; 
             updateSyncStatus('syncing'); 
             clearTimeout(saveTimeout); 
-            // Autosave set to 60 minutes (3,600,000 ms) of inactivity
+            // Autosave set to 60 minutes
             saveTimeout = setTimeout(saveToCloud, 3600000); 
         };
+
+        window.saveReflection = (key, value) => {
+            if(Array.isArray(appData.reflection[key])) {
+                // Handle Checkbox Arrays
+                const index = appData.reflection[key].indexOf(value);
+                if (index > -1) {
+                    appData.reflection[key].splice(index, 1);
+                } else {
+                    appData.reflection[key].push(value);
+                }
+            } else {
+                // Handle Text/Radio
+                appData.reflection[key] = value;
+            }
+            updateSyncStatus('syncing');
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveToCloud, 3600000); 
+        }
 
         window.manualSave = () => {
             clearTimeout(saveTimeout); // Clear any pending autosave
@@ -400,8 +476,53 @@
         };
 
         // --- TEACHER HELPERS ---
+        function updateTeacherCharts(data) {
+            const counts = { 'Excellent': 0, 'Good': 0, 'Okay': 0, 'Needs Improvement': 0 };
+            let totalRated = 0;
+
+            data.forEach(s => {
+                const r = s.reflection?.q7;
+                if (r) {
+                    if (counts[r] !== undefined) {
+                        counts[r]++;
+                        totalRated++;
+                    }
+                }
+            });
+
+            // Avoid divide by zero
+            const base = totalRated === 0 ? 1 : totalRated;
+
+            // Update DOM
+            const setBar = (idSuffix, count) => {
+                const percent = (count / base) * 100;
+                const elBar = document.getElementById(`bar-${idSuffix}`);
+                const elVal = document.getElementById(`val-${idSuffix}`);
+                if(elBar) elBar.style.width = `${percent}%`;
+                if(elVal) elVal.innerText = `${count} (${Math.round(percent)}%)`;
+            };
+
+            setBar('excellent', counts['Excellent']);
+            setBar('good', counts['Good']);
+            setBar('okay', counts['Okay']);
+            setBar('bad', counts['Needs Improvement']);
+        }
+
         function renderTeacherTable(data) {
             const tbody = document.getElementById('teacher-table-body');
+            
+            // Update Stats & Charts
+            if(document.getElementById('stat-count')) {
+                document.getElementById('stat-count').innerText = data.length;
+                document.getElementById('stat-active').innerText = data.filter(s => {
+                    const r = s.reflection || {};
+                    return (r.q1 && r.q1.length > 0);
+                }).length;
+                
+                // Update the Satisfaction Graph
+                updateTeacherCharts(data);
+            }
+
             if(!tbody) return;
             tbody.innerHTML = '';
 
@@ -410,17 +531,12 @@
                 return;
             }
 
-            // Stats
-            document.getElementById('stat-count').innerText = data.length;
-            document.getElementById('stat-active').innerText = data.filter(s => {
-                const n = s.notes || {};
-                return (n.iot || n.sec || n.ai || n.panel);
-            }).length;
-
             data.forEach(student => {
                 const notes = student.notes || {};
                 const list = student.checklist || {};
+                const r = student.reflection || {};
                 const has = (txt) => txt && txt.length > 2 ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-600">-</span>';
+                const hasReflect = (r.q1 && r.q1.length > 0) ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-600">-</span>';
                 
                 const checkIcon = (val, icon) => `<i class="fas ${icon} ${val ? 'text-emerald-400' : 'text-slate-700'} text-xs"></i>`;
 
@@ -440,7 +556,7 @@
                     <td class="p-3 text-center">${has(notes.iot)}</td>
                     <td class="p-3 text-center">${has(notes.sec)}</td>
                     <td class="p-3 text-center">${has(notes.ai)}</td>
-                    <td class="p-3 text-center">${has(notes.panel)}</td>
+                    <td class="p-3 text-center">${hasReflect}</td>
                     <td class="p-3 text-right flex items-center justify-end gap-2">
                         <button onclick="window.viewStudent('${student.id}')" class="text-amber-500 hover:text-white hover:bg-amber-600 px-2 py-1 rounded text-xs font-bold uppercase">View</button>
                         <button onclick="window.deleteStudent('${student.id}')" class="text-slate-500 hover:text-white hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition-colors" title="Delete Student"><i class="fas fa-trash"></i></button>
@@ -457,6 +573,8 @@
             document.getElementById('modal-id').innerText = student.id;
             const n = student.notes || {};
             const l = student.checklist || {};
+            const r = student.reflection || {};
+            const tComment = student.teacherComment || '';
             const content = document.getElementById('modal-content');
             
             const renderBlock = (title, text, color) => `
@@ -473,6 +591,12 @@
 
             content.innerHTML = `
                 <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
+                    <h4 class="text-white font-bold mb-3 text-sm uppercase">Teacher Feedback</h4>
+                    <textarea id="teacher-comment-input" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:outline-none focus:border-amber-500 h-24" placeholder="Write feedback here...">${tComment}</textarea>
+                    <button onclick="window.saveTeacherComment('${id}')" class="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">Save Feedback</button>
+                </div>
+
+                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
                     <h4 class="text-white font-bold mb-3 text-sm uppercase">Readiness Checklist</h4>
                     <div class="grid grid-cols-2 gap-2">
                         ${checkStatus(l.charged, 'Charged')}
@@ -481,6 +605,16 @@
                         ${checkStatus(l.cisco, 'Cisco Installed')}
                     </div>
                 </div>
+                ${renderBlock('Reflection: Learned', r.q1, 'blue')}
+                ${renderBlock('Reflection: Careers', (r.q2 || []).join(', '), 'blue')}
+                ${renderBlock('Reflection: GMCS Skills', (r.q3 || []).join(', '), 'blue')}
+                ${renderBlock('Reflection: Surprised', r.q4, 'blue')}
+                ${renderBlock('Reflection: Career Goals', r.q5, 'blue')}
+                ${renderBlock('Reflection: Want to Learn', r.q6, 'blue')}
+                ${renderBlock('Reflection: Rating', r.q7, 'blue')}
+                
+                <hr class="border-slate-700 my-4">
+                
                 ${renderBlock('IoT Innovation', n.iot, 'purple')}
                 ${renderBlock('Secure the Network', n.sec, 'red')}
                 ${renderBlock('AI for Good', n.ai, 'blue')}
@@ -494,12 +628,15 @@
 
         window.exportCSV = () => {
             if (teacherData.length === 0) { alert("No data."); return; }
-            let csv = "Name,Email_ID,Charged,Packed,Login_Verified,Cisco_Installed,IoT Notes,Security Notes,AI Notes,Panel Notes,Custom Questions\n";
+            let csv = "Name,Email_ID,Teacher_Feedback,Charged,Packed,Login_Verified,Cisco_Installed,IoT Notes,Security Notes,AI Notes,Panel Notes,Custom Questions,Reflection_Learned,Reflection_Careers,Reflection_Skills,Reflection_Surprised,Reflection_Goals,Reflection_LearnMore,Reflection_Rating\n";
             teacherData.forEach(s => {
                 const n = s.notes || {};
                 const l = s.checklist || {};
-                const clean = (txt) => `"${(txt || '').replace(/"/g, '""')}"`;
-                csv += `${clean(s.studentName)},${clean(s.id)},${l.charged},${l.pack},${l.login},${l.cisco},${clean(n.iot)},${clean(n.sec)},${clean(n.ai)},${clean(n.panel)},${clean(n.custom_q)}\n`;
+                const r = s.reflection || {};
+                const clean = (txt) => `"${(txt || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+                const cleanArr = (arr) => `"${(arr || []).join('; ')}"`;
+                
+                csv += `${clean(s.studentName)},${clean(s.id)},${clean(s.teacherComment)},${l.charged},${l.pack},${l.login},${l.cisco},${clean(n.iot)},${clean(n.sec)},${clean(n.ai)},${clean(n.panel)},${clean(n.custom_q)},${clean(r.q1)},${cleanArr(r.q2)},${cleanArr(r.q3)},${clean(r.q4)},${clean(r.q5)},${clean(r.q6)},${clean(r.q7)}\n`;
             });
             const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
             const a = document.createElement('a');
@@ -515,7 +652,7 @@
 
         // --- CLIPBOARD ---
         window.copyAllNotes = () => {
-            const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT]\n${appData.notes.iot}\n\n[Security]\n${appData.notes.sec}\n\n[AI]\n${appData.notes.ai}\n\n[Panel]\n${appData.notes.panel}\n\n[Qs]\n${appData.notes.custom_q}`;
+            const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT]\n${appData.notes.iot}\n\n[Security]\n${appData.notes.sec}\n\n[AI]\n${appData.notes.ai}\n\n[Panel]\n${appData.notes.panel}\n\n[Qs]\n${appData.notes.custom_q}\n\n[REFLECTION]\nLearned: ${appData.reflection.q1}\nSurprised: ${appData.reflection.q4}`;
             const textArea = document.createElement("textarea");
             textArea.value = fullText; textArea.style.position = "fixed"; document.body.appendChild(textArea); textArea.focus(); textArea.select();
             try { document.execCommand("copy"); showToast("Copied!"); } catch (err) { showToast("Copy Failed"); }
@@ -564,10 +701,73 @@
         function getTeacherDashboardView() {
             return `
                 <div class="h-full flex flex-col fade-in">
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><p class="text-slate-400 text-[10px] uppercase font-bold">Students</p><h3 class="text-2xl font-bold text-white" id="stat-count">0</h3></div>
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><p class="text-slate-400 text-[10px] uppercase font-bold">Active</p><h3 class="text-2xl font-bold text-emerald-400" id="stat-active">0</h3></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                        <!-- Stats Column -->
+                        <div class="lg:col-span-1 space-y-4">
+                            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
+                                <div>
+                                    <p class="text-slate-400 text-[10px] uppercase font-bold">Total Students</p>
+                                    <h3 class="text-3xl font-bold text-white" id="stat-count">0</h3>
+                                </div>
+                                <div class="bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-400 text-xl"></i></div>
+                            </div>
+                            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
+                                <div>
+                                    <p class="text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p>
+                                    <h3 class="text-3xl font-bold text-emerald-400" id="stat-active">0</h3>
+                                </div>
+                                <div class="bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-400 text-xl"></i></div>
+                            </div>
+                        </div>
+
+                        <!-- Graph Column -->
+                        <div class="lg:col-span-2 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <h3 class="text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
+                            <div class="space-y-3">
+                                <!-- Excellent -->
+                                <div>
+                                    <div class="flex justify-between text-xs text-white mb-1">
+                                        <span class="flex items-center"><i class="fas fa-smile-beam text-emerald-400 mr-2"></i> Excellent</span>
+                                        <span id="val-excellent" class="font-mono text-emerald-400">0</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2">
+                                        <div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <!-- Good -->
+                                <div>
+                                    <div class="flex justify-between text-xs text-white mb-1">
+                                        <span class="flex items-center"><i class="fas fa-smile text-blue-400 mr-2"></i> Good</span>
+                                        <span id="val-good" class="font-mono text-blue-400">0</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2">
+                                        <div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <!-- Okay -->
+                                <div>
+                                    <div class="flex justify-between text-xs text-white mb-1">
+                                        <span class="flex items-center"><i class="fas fa-meh text-amber-400 mr-2"></i> Okay</span>
+                                        <span id="val-okay" class="font-mono text-amber-400">0</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2">
+                                        <div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <!-- Needs Improvement -->
+                                <div>
+                                    <div class="flex justify-between text-xs text-white mb-1">
+                                        <span class="flex items-center"><i class="fas fa-frown text-red-400 mr-2"></i> Needs Work</span>
+                                        <span id="val-bad" class="font-mono text-red-400">0</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2">
+                                        <div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
                     <div class="flex-1 bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
                         <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
                             <h3 class="font-bold text-white text-sm"><i class="fas fa-users mr-2"></i> Responses</h3>
@@ -575,12 +775,89 @@
                         </div>
                         <div class="overflow-y-auto flex-1 p-0">
                             <table class="w-full text-left border-collapse">
-                                <thead class="bg-slate-900 text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Panel</th><th class="p-3 text-right">Action</th></tr></thead>
+                                <thead class="bg-slate-900 text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
                                 <tbody id="teacher-table-body" class="divide-y divide-slate-700 text-sm text-slate-300"><tr><td colspan="7" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
                             </table>
                         </div>
                     </div>
                 </div>`;
+        }
+
+        function getTeacherPresentationView() {
+            return `
+                <div class="h-full overflow-y-auto fade-in pr-2 pb-12">
+                    <div class="max-w-2xl mx-auto space-y-12">
+                        <!-- Slide 1: Welcome -->
+                        <div class="bg-slate-800 rounded-2xl p-8 border border-amber-500/30 text-center shadow-2xl">
+                            <h2 class="text-4xl font-extrabold text-white mb-2">NPH TechCon 2025</h2>
+                            <p class="text-xl text-amber-400 font-bold tracking-widest uppercase mb-6">Connect. Protect. Empower.</p>
+                            <p class="text-slate-400 leading-relaxed">Our goal is to explore emerging technology, understand cybersecurity fundamentals, and empower you to build the future.</p>
+                        </div>
+
+                        <!-- Slide 2: Login -->
+                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-sign-in-alt text-8xl text-blue-500"></i></div>
+                            <h3 class="text-2xl font-bold text-white mb-4 flex items-center"><span class="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">1</span> Login</h3>
+                            <p class="text-slate-300 mb-4">Access the web app using your school credentials.</p>
+                            <ul class="text-sm text-slate-400 space-y-2 ml-11">
+                                <li>• Enter your <strong>First & Last Name</strong>.</li>
+                                <li>• Enter your <strong>School Email</strong> (e.g., jane.doe@school.edu).</li>
+                                <li>• This creates your cloud profile for syncing notes.</li>
+                            </ul>
+                        </div>
+
+                        <!-- Slide 3: Prep -->
+                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-clipboard-check text-8xl text-emerald-500"></i></div>
+                            <h3 class="text-2xl font-bold text-white mb-4 flex items-center"><span class="bg-emerald-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">2</span> Get Ready</h3>
+                            <p class="text-slate-300 mb-4">Complete the checklist before the convention.</p>
+                            <ul class="text-sm text-slate-400 space-y-2 ml-11">
+                                <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Charge Laptop to 100%</li>
+                                <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Pack your Charger</li>
+                                <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Verify Login Works</li>
+                                <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Install Cisco Packet Tracer</li>
+                            </ul>
+                        </div>
+
+                        <!-- Slide 4: Passport -->
+                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-passport text-8xl text-purple-500"></i></div>
+                            <h3 class="text-2xl font-bold text-white mb-4 flex items-center"><span class="bg-purple-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">3</span> Digital Passport</h3>
+                            <p class="text-slate-300 mb-4">Your workspace during the convention.</p>
+                            <div class="grid grid-cols-2 gap-4 text-xs text-slate-400 ml-11">
+                                <div class="bg-slate-900 p-3 rounded border border-slate-600">
+                                    <strong class="block text-white mb-1">IoT Innovation</strong>
+                                    Take notes on smart devices.
+                                </div>
+                                <div class="bg-slate-900 p-3 rounded border border-slate-600">
+                                    <strong class="block text-white mb-1">Security</strong>
+                                    Cybersecurity defense tactics.
+                                </div>
+                                <div class="bg-slate-900 p-3 rounded border border-slate-600">
+                                    <strong class="block text-white mb-1">AI for Good</strong>
+                                    Solving problems with AI.
+                                </div>
+                                <div class="bg-slate-900 p-3 rounded border border-slate-600">
+                                    <strong class="block text-white mb-1">Panel</strong>
+                                    Career Q&A notes.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Slide 5: Save -->
+                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-save text-8xl text-red-500"></i></div>
+                            <h3 class="text-2xl font-bold text-white mb-4 flex items-center"><span class="bg-red-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3">4</span> Save & Export</h3>
+                            <p class="text-slate-300 mb-4">Don't lose your work!</p>
+                            <ul class="text-sm text-slate-400 space-y-2 ml-11">
+                                <li>• Click the <span class="text-emerald-400 font-bold">Green "Save Now"</span> button frequently.</li>
+                                <li>• Watch the sync icon in the top right.</li>
+                                <li>• Use "Copy All" to paste your notes into your final portfolio document.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // Student Views
@@ -600,7 +877,160 @@
         }
         function getPassportView() {
             const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
-            return `<div class="space-y-6 fade-in pt-4"><div class="text-center"><h2 class="text-2xl font-bold text-white">Digital Passport</h2><p class="text-xs text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div><div class="space-y-6"><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-white">IoT Innovation</h3></div><p class="text-xs text-slate-400 mb-3">What problem were you solving?</p><textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Secure the Network</h3></div><p class="text-xs text-slate-400 mb-3">Why is protection important?</p><textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-white">AI for Good</h3></div><p class="text-xs text-slate-400 mb-3">Who benefits from your solution?</p><textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Professional Panel</h3></div><p class="text-xs text-slate-400 mb-3">Which career path interested you?</p><textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea></div></div><div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent flex gap-3 px-1"><button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button><button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button></div><p class="text-center text-[10px] text-slate-500 mt-2 pb-4">Paste into your College & Career Passport later.</p></div>`;
+            const tComment = appData.teacherComment;
+            let feedbackHTML = '';
+            if (tComment && tComment.length > 0) {
+                feedbackHTML = `<div class="bg-gradient-to-r from-amber-900/40 to-amber-900/20 border border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden"><div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div><h4 class="text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4><p class="text-slate-200 text-sm leading-relaxed">${tComment}</p></div>`;
+            }
+            return `<div class="space-y-6 fade-in pt-4"><div class="text-center"><h2 class="text-2xl font-bold text-white">Digital Passport</h2><p class="text-xs text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div>${feedbackHTML}<div class="space-y-6"><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-white">IoT Innovation</h3></div><p class="text-xs text-slate-400 mb-3">What problem were you solving?</p><textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Secure the Network</h3></div><p class="text-xs text-slate-400 mb-3">Why is protection important?</p><textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-white">AI for Good</h3></div><p class="text-xs text-slate-400 mb-3">Who benefits from your solution?</p><textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Professional Panel</h3></div><p class="text-xs text-slate-400 mb-3">Which career path interested you?</p><textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea></div></div><div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent flex gap-3 px-1"><button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button><button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button></div><p class="text-center text-[10px] text-slate-500 mt-2 pb-4">Paste into your College & Career Passport later.</p></div>`;
+        }
+
+        function getReflectionView() {
+            const r = appData.reflection || {};
+            const tComment = appData.teacherComment;
+            
+            let feedbackHTML = '';
+            if (tComment && tComment.length > 0) {
+                feedbackHTML = `
+                    <div class="bg-gradient-to-r from-amber-900/40 to-amber-900/20 border border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
+                        <h4 class="text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
+                        <p class="text-slate-200 text-sm leading-relaxed">${tComment}</p>
+                    </div>
+                `;
+            }
+
+            const checkBox = (key, val, label) => {
+                const checked = (r[key] || []).includes(val) ? 'checked' : '';
+                return `
+                <label class="flex items-start space-x-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="checkbox" class="mt-1 form-checkbox text-blue-500 rounded bg-slate-800 border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-sm text-slate-300 select-none">${label}</span>
+                </label>`;
+            };
+
+            const radioBox = (key, val, label) => {
+                const checked = r[key] === val ? 'checked' : '';
+                return `
+                <label class="flex items-center space-x-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-slate-800 border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-sm text-slate-300 select-none">${label}</span>
+                </label>`;
+            };
+
+            return `
+                <div class="space-y-6 fade-in pt-4 pb-8">
+                    <div class="text-center">
+                        <h2 class="text-2xl font-bold text-white">Event Reflection</h2>
+                        <p class="text-xs text-slate-400 mt-1">Wrap up your experience.</p>
+                    </div>
+
+                    ${feedbackHTML}
+
+                    <!-- Q1 -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-2">1. What was your biggest takeaway from today?</h3>
+                        <p class="text-xs text-slate-400 mb-3">(2-3 Sentences)</p>
+                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="I learned that...">${r.q1 || ''}</textarea>
+                    </div>
+
+                    <!-- Q2 Careers (2-Column Grid) -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-3">2. Which career paths did you explore?</h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${checkBox('q2', 'Engineering', 'Engineering')}
+                            ${checkBox('q2', 'Health / Biomedical', 'Health / Biomedical')}
+                            ${checkBox('q2', 'Business', 'Business')}
+                            ${checkBox('q2', 'Media', 'Media')}
+                            ${checkBox('q2', 'Tech / Cyber', 'Tech / Cyber')}
+                            ${checkBox('q2', 'Trades', 'Trades')}
+                        </div>
+                    </div>
+
+                    <!-- Q3 Skills (2x2 Grid) -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-1">3. GMCS Graduate Profile Skills</h3>
+                        <p class="text-xs text-slate-400 mb-4">Check 2-3 skills you used today.</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Creative -->
+                            <div class="bg-slate-900/30 p-3 rounded-lg border border-purple-500/20">
+                                <h4 class="text-purple-400 text-xs font-bold uppercase mb-2">Creative & Critical Thinker</h4>
+                                <div class="space-y-2">
+                                    ${checkBox('q3', 'Solved Problems', 'Solved Problems')}
+                                    ${checkBox('q3', 'Shared My Work', 'Shared My Work')}
+                                    ${checkBox('q3', 'Persevered', 'Persevered')}
+                                </div>
+                            </div>
+                            <!-- Responsible -->
+                            <div class="bg-slate-900/30 p-3 rounded-lg border border-emerald-500/20">
+                                <h4 class="text-emerald-400 text-xs font-bold uppercase mb-2">Responsible Individual</h4>
+                                <div class="space-y-2">
+                                    ${checkBox('q3', 'Accountable', 'Accountable')}
+                                    ${checkBox('q3', 'Prepared', 'Prepared')}
+                                    ${checkBox('q3', 'Made Plans', 'Made Plans')}
+                                </div>
+                            </div>
+                            <!-- Collaborator -->
+                            <div class="bg-slate-900/30 p-3 rounded-lg border border-blue-500/20">
+                                <h4 class="text-blue-400 text-xs font-bold uppercase mb-2">Effective Collaborator</h4>
+                                <div class="space-y-2">
+                                    ${checkBox('q3', 'Listened', 'Listened')}
+                                    ${checkBox('q3', 'Mutual Respect', 'Mutual Respect')}
+                                    ${checkBox('q3', 'Built Team', 'Built Team')}
+                                </div>
+                            </div>
+                            <!-- Learner -->
+                            <div class="bg-slate-900/30 p-3 rounded-lg border border-amber-500/20">
+                                <h4 class="text-amber-400 text-xs font-bold uppercase mb-2">Lifelong Learner</h4>
+                                <div class="space-y-2">
+                                    ${checkBox('q3', 'Authentic', 'Authentic')}
+                                    ${checkBox('q3', 'Reflective', 'Reflective')}
+                                    ${checkBox('q3', 'Used Technology', 'Used Technology')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Q4 Surprise -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-2">4. What surprised you the most today?</h3>
+                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-600" placeholder="One short sentence...">
+                    </div>
+
+                    <!-- Q5 Goals (2-Column Grid) -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-3">5. Impact on career goals?</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            ${radioBox('q5', 'More Interested', 'I am more interested')}
+                            ${radioBox('q5', 'Learned New', 'I learned something new')}
+                            ${radioBox('q5', 'Still Exploring', 'I am still exploring')}
+                            ${radioBox('q5', 'Not For Me', 'This may not be for me')}
+                        </div>
+                    </div>
+
+                    <!-- Q6 Next -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-2">6. What do you want to learn more about next?</h3>
+                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-20 placeholder-slate-600" placeholder="I want to look up...">${r.q6 || ''}</textarea>
+                    </div>
+
+                    <!-- Q7 Rating (2-Column Grid) -->
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="text-white font-bold mb-3">7. Rate experience</h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${radioBox('q7', 'Excellent', 'Excellent 🤩')}
+                            ${radioBox('q7', 'Good', 'Good 🙂')}
+                            ${radioBox('q7', 'Okay', 'Okay 😐')}
+                            ${radioBox('q7', 'Needs Improvement', 'Needs Work 😕')}
+                        </div>
+                    </div>
+
+                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent flex gap-3 px-1">
+                        <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Reflection</button>
+                    </div>
+                </div>
+            `;
         }
 
         // Start App
