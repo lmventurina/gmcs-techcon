@@ -95,7 +95,7 @@
     </header>
 
     <!-- Main Content Area -->
-    <main id="app-content" class="flex-1 overflow-y-auto p-4 pb-24 max-w-4xl mx-auto w-full relative">
+    <main id="app-content" class="flex-1 flex flex-col overflow-hidden p-4 pb-24 max-w-4xl mx-auto w-full relative">
         <!-- Content injected via JS -->
         <div class="flex items-center justify-center h-full text-slate-500">
             <div class="text-center">
@@ -195,21 +195,32 @@
 
         // --- AUTH & INIT ---
         const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    throw new Error("No initial token");
-                }
-            } catch (error) {
-                console.warn("Custom token auth failed, switching to anonymous:", error.message);
-                try {
-                    await signInAnonymously(auth);
-                } catch (anonError) {
-                    console.error("Anonymous Auth Critical Error:", anonError);
-                    updateSyncStatus('offline');
-                }
-            }
+            return new Promise((resolve) => {
+                // Safety timeout to prevent stuck loading screen
+                const safetyTimer = setTimeout(() => {
+                    console.warn("Auth timeout - defaulting to anonymous");
+                    signInAnonymously(auth).then(resolve).catch(resolve);
+                }, 3000);
+
+                const tryAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.warn("Auth fallback:", error.message);
+                        try {
+                            await signInAnonymously(auth);
+                        } catch(e) { console.error("Auth failed completely"); }
+                    } finally {
+                        clearTimeout(safetyTimer);
+                        resolve();
+                    }
+                };
+                tryAuth();
+            });
         };
 
         const initApp = () => {
@@ -272,7 +283,8 @@
                         teacherReviews: { ...appData.teacherReviews, ...(fetchedData.teacherReviews || {}) }
                     };
                     updateHeader();
-                    if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
+                    // Don't re-render if user is editing (prevents cursor jump), unless it's first load
+                    if (currentView === 'login') window.renderView('home');
                 } else {
                     saveToCloud();
                 }
@@ -366,6 +378,16 @@
                 updateSyncStatus('online');
             } catch (e) {
                 alert("Failed to save feedback.");
+            }
+        };
+
+        // NEW: Save button specific handler for individual sections in modal
+        window.saveReviewItem = async (studentId, key) => {
+            // Find the specific checkbox
+            const checkbox = document.getElementById(`review-check-${key}`);
+            if (checkbox) {
+                await window.toggleItemReview(studentId, key, checkbox.checked);
+                showToast("Section Saved!");
             }
         };
 
@@ -597,6 +619,29 @@
             }
         };
 
+        // NEW: Submit Reflection Check
+        window.submitReflection = () => {
+            const r = appData.reflection || {};
+            const missing = [];
+            
+            if (!r.q1 || r.q1.trim().length === 0) missing.push("1. Biggest Takeaway");
+            if (!r.q2 || r.q2.length === 0) missing.push("2. Career Paths");
+            if (!r.q3 || r.q3.length === 0) missing.push("3. GMCS Skills");
+            if (!r.q4 || r.q4.trim().length === 0) missing.push("4. Surprise");
+            if (!r.q5 || r.q5.trim().length === 0) missing.push("5. Career Goals");
+            if (!r.q6 || r.q6.trim().length === 0) missing.push("6. What's Next");
+            if (!r.q7 || r.q7.trim().length === 0) missing.push("7. Final Rating");
+
+            if (missing.length > 0) {
+                alert("Please complete the following sections before submitting:\n\n" + missing.join("\n"));
+                return;
+            }
+
+            // Force save and show success
+            window.manualSave();
+            alert("✅ Reflection Submitted Successfully!\n\nGreat job reflecting on your experience.");
+        };
+
         // NEW: Auto-bullet list handler for custom questions
         window.handleBulletInput = (e) => {
             if (e.key === 'Enter') {
@@ -824,10 +869,13 @@
                 <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
                     <div class="flex justify-between items-start mb-2">
                         <h4 class="text-${color}-600 dark:text-${color}-400 font-bold text-sm uppercase">${title}</h4>
-                        <label class="flex items-center cursor-pointer space-x-2">
-                            <span class="text-[10px] uppercase font-bold text-slate-400 select-none">Reviewed</span>
-                            <input type="checkbox" class="form-checkbox rounded text-emerald-500 bg-slate-700 border-slate-600 focus:ring-0 w-4 h-4 cursor-pointer" ${isChecked} onchange="window.toggleItemReview('${id}', '${key}', this.checked)">
-                        </label>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center cursor-pointer space-x-2">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 select-none">Reviewed</span>
+                                <input type="checkbox" id="review-check-${key}" class="form-checkbox rounded text-emerald-500 bg-slate-700 border-slate-600 focus:ring-0 w-4 h-4 cursor-pointer" ${isChecked} onchange="window.toggleItemReview('${id}', '${key}', this.checked)">
+                            </label>
+                            <button onclick="window.saveReviewItem('${id}', '${key}')" class="text-slate-400 hover:text-emerald-500 transition-colors" title="Save Review"><i class="fas fa-save"></i></button>
+                        </div>
                     </div>
                     <p class="text-slate-700 dark:text-slate-200 text-sm whitespace-pre-wrap">${text && text.length > 0 ? text : '<span class="text-slate-400 dark:text-slate-600 italic">Empty</span>'}</p>
                 </div>`;
@@ -927,6 +975,7 @@
             renderTeacherTable(filtered);
         };
 
+        // --- CLIPBOARD ---
         window.copyAllNotes = () => {
             const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT]\n${appData.notes.iot}\n\n[Security]\n${appData.notes.sec}\n\n[AI]\n${appData.notes.ai}\n\n[Panel]\n${appData.notes.panel}\n\n[Qs]\n${appData.notes.custom_q}\n\n[REFLECTION]\nLearned: ${appData.reflection.q1}\nSurprised: ${appData.reflection.q4}`;
             const textArea = document.createElement("textarea");
@@ -996,78 +1045,95 @@
 
         function getTeacherDashboardView() {
             return `<br>
-                <div class="h-full flex flex-col fade-in">
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-                        <div class="lg:col-span-1 space-y-4">
-                            <!-- Updated Total Students Card with Online/Offline stats -->
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                                <div class="flex items-center justify-between mb-2">
-                                    <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Total Students</p><h3 class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-count">0</h3></div>
-                                    <div class="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-xl"></i></div>
+                <div class="h-full flex flex-col fade-in overflow-hidden">
+                    <div class="flex-none p-4 pb-0 space-y-4">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div class="lg:col-span-1 space-y-4">
+                                <!-- Updated Total Students Card with Online/Offline stats -->
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Total Students</p><h3 class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-count">0</h3></div>
+                                        <div class="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-xl"></i></div>
+                                    </div>
+                                    <div class="flex items-center gap-3 text-xs pt-2 border-t border-gray-100 dark:border-slate-700">
+                                        <span class="text-emerald-500 dark:text-emerald-400 font-bold flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-online" class="mr-1">0</span> Online</span>
+                                        <span class="text-slate-400 dark:text-slate-500 font-medium flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-offline" class="mr-1">0</span> Offline</span>
+                                    </div>
                                 </div>
-                                <div class="flex items-center gap-3 text-xs pt-2 border-t border-gray-100 dark:border-slate-700">
-                                    <span class="text-emerald-500 dark:text-emerald-400 font-bold flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-online" class="mr-1">0</span> Online</span>
-                                    <span class="text-slate-400 dark:text-slate-500 font-medium flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-offline" class="mr-1">0</span> Offline</span>
-                                </div>
-                            </div>
 
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
-                                <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="stat-active">0</h3></div>
-                                <div class="bg-emerald-100 dark:bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400 text-xl"></i></div>
-                            </div>
-                        </div>
-
-                        <!-- Changed to grid for side-by-side charts -->
-                        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            
-                            <!-- Satisfaction Chart -->
-                            <div>
-                                <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
-                                <div class="space-y-3">
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile-beam text-emerald-500 dark:text-emerald-400 mr-2"></i> Excellent</span><span id="val-excellent" class="font-mono text-emerald-600 dark:text-emerald-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile text-blue-500 dark:text-blue-400 mr-2"></i> Good</span><span id="val-good" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-meh text-amber-500 dark:text-amber-400 mr-2"></i> Okay</span><span id="val-okay" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-frown text-red-500 dark:text-red-400 mr-2"></i> Needs Work</span><span id="val-bad" class="font-mono text-red-600 dark:text-red-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                                    <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="stat-active">0</h3></div>
+                                    <div class="bg-emerald-100 dark:bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400 text-xl"></i></div>
                                 </div>
                             </div>
 
-                            <!-- Career Goals Chart -->
-                            <div>
-                                <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Impact on Career Goals</h3>
-                                <div class="space-y-3">
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-rocket text-purple-500 dark:text-purple-400 mr-2"></i> More Interested</span><span id="val-goal-more" class="font-mono text-purple-600 dark:text-purple-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-more" class="bg-purple-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-lightbulb text-blue-500 dark:text-blue-400 mr-2"></i> Learned New</span><span id="val-goal-new" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-new" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-search text-amber-500 dark:text-amber-400 mr-2"></i> Still Exploring</span><span id="val-goal-still" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-still" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-ban text-slate-500 dark:text-slate-400 mr-2"></i> Not For Me</span><span id="val-goal-not" class="font-mono text-slate-600 dark:text-slate-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-not" class="bg-slate-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                            <!-- Changed to grid for side-by-side charts -->
+                            <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                
+                                <!-- Satisfaction Chart -->
+                                <div>
+                                    <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
+                                    <div class="space-y-3">
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile-beam text-emerald-500 dark:text-emerald-400 mr-2"></i> Excellent</span><span id="val-excellent" class="font-mono text-emerald-600 dark:text-emerald-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile text-blue-500 dark:text-blue-400 mr-2"></i> Good</span><span id="val-good" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-meh text-amber-500 dark:text-amber-400 mr-2"></i> Okay</span><span id="val-okay" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-frown text-red-500 dark:text-red-400 mr-2"></i> Needs Work</span><span id="val-bad" class="font-mono text-red-600 dark:text-red-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    </div>
                                 </div>
-                            </div>
 
+                                <!-- Career Goals Chart -->
+                                <div>
+                                    <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Impact on Career Goals</h3>
+                                    <div class="space-y-3">
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-rocket text-purple-500 dark:text-purple-400 mr-2"></i> More Interested</span><span id="val-goal-more" class="font-mono text-purple-600 dark:text-purple-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-more" class="bg-purple-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-lightbulb text-blue-500 dark:text-blue-400 mr-2"></i> Learned New</span><span id="val-goal-new" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-new" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-search text-amber-500 dark:text-amber-400 mr-2"></i> Still Exploring</span><span id="val-goal-still" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-still" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                        <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-ban text-slate-500 dark:text-slate-400 mr-2"></i> Not For Me</span><span id="val-goal-not" class="font-mono text-slate-600 dark:text-slate-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-not" class="bg-slate-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    </div>
+                                </div>
+
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col">
-                        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 gap-4">
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-bold text-slate-900 dark:text-white text-sm whitespace-nowrap"><i class="fas fa-users mr-2"></i> Responses</h3>
-                                <select id="period-filter" onchange="window.filterTeacherList()" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-2 py-1 text-xs text-slate-700 dark:text-slate-300 focus:border-amber-500 focus:outline-none">
-                                    <option value="all">All Periods</option>
-                                    <option value="1">Period 1</option>
-                                    <option value="2">Period 2</option>
-                                    <option value="3">Period 3</option>
-                                    <option value="4">Period 4</option>
-                                    <option value="5">Period 5</option>
-                                    <option value="6">Period 6</option>
-                                    <option value="7">Period 7</option>
-                                    <option value="8">Period 8</option>
-                                </select>
+                    <div class="flex-1 p-4 pt-0 overflow-hidden flex flex-col">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 flex flex-col h-full overflow-hidden">
+                            <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 gap-4 flex-none">
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-bold text-slate-900 dark:text-white text-sm whitespace-nowrap"><i class="fas fa-users mr-2"></i> Responses</h3>
+                                    <select id="period-filter" onchange="window.filterTeacherList()" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-2 py-1 text-xs text-slate-700 dark:text-slate-300 focus:border-amber-500 focus:outline-none">
+                                        <option value="all">All Periods</option>
+                                        <option value="1">Period 1</option>
+                                        <option value="2">Period 2</option>
+                                        <option value="3">Period 3</option>
+                                        <option value="4">Period 4</option>
+                                        <option value="5">Period 5</option>
+                                        <option value="6">Period 6</option>
+                                        <option value="7">Period 7</option>
+                                        <option value="8">Period 8</option>
+                                    </select>
+                                </div>
+                                <input type="text" id="search-input" onkeyup="window.filterTeacherList()" placeholder="Search..." class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-3 py-1 text-xs text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none">
                             </div>
-                            <input type="text" id="search-input" onkeyup="window.filterTeacherList()" placeholder="Search..." class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-3 py-1 text-xs text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none">
-                        </div>
-                        <div class="overflow-y-auto flex-1 p-0">
-                            <table class="w-full text-left border-collapse">
-                                <thead class="bg-gray-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Period</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
-                                <tbody id="teacher-table-body" class="divide-y divide-gray-200 dark:divide-slate-700 text-sm text-slate-700 dark:text-slate-300"><tr><td colspan="8" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
-                            </table>
+                            <div class="flex-1 overflow-y-auto p-0">
+                                <table class="w-full text-left border-collapse relative">
+                                    <thead class="bg-gray-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] uppercase sticky top-0 z-10 shadow-sm">
+                                        <tr>
+                                            <th class="p-3 bg-gray-100 dark:bg-slate-900">Name</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">Period</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">Prep</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">IoT</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">Sec</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">AI</th>
+                                            <th class="p-3 text-center bg-gray-100 dark:bg-slate-900">Reflect</th>
+                                            <th class="p-3 text-right bg-gray-100 dark:bg-slate-900">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="teacher-table-body" class="divide-y divide-gray-200 dark:divide-slate-700 text-sm text-slate-700 dark:text-slate-300">
+                                        <tr><td colspan="8" class="p-8 text-center text-slate-500">Loading...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>`;
@@ -1183,7 +1249,7 @@
             let feedbackHTML = '';
             if (tComment && tComment.length > 0) {
                 feedbackHTML = `
-                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl relative overflow-hidden fade-in">
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl relative overflow-hidden fade-in flex-none">
                         <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
                         <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
                         <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
@@ -1192,75 +1258,77 @@
             }
 
             return `<br>
-                <div class="space-y-6 fade-in pt-4">
-                    <!-- Hero Card -->
-                    <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden">
-                        <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
-                        <h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2>
-                        <p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p>
-                        <div class="inline-block px-4 py-1 rounded-full bg-slate-800 border border-slate-600 text-xs font-mono text-slate-300">
-                            <i class="far fa-calendar-alt mr-2"></i>Thursday, Jan 15
-                        </div>
-                    </div>
-
-                    ${feedbackHTML}
-
-                    <!-- Progress Card (Gamification) -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-lg">
-                        <div class="flex justify-between items-end mb-2">
-                            <div>
-                                <h3 class="text-slate-900 dark:text-white font-bold"><i class="fas fa-medal text-amber-500 mr-2"></i>Mission Progress</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">Collect stamps by taking notes.</p>
+                <div class="h-full flex flex-col fade-in pt-2">
+                    <div class="flex-1 overflow-y-auto space-y-6 pr-1">
+                        <!-- Hero Card -->
+                        <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden flex-none">
+                            <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
+                            <h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2>
+                            <p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p>
+                            <div class="inline-block px-4 py-1 rounded-full bg-slate-800 border border-slate-600 text-xs font-mono text-slate-300">
+                                <i class="far fa-calendar-alt mr-2"></i>Thursday, Jan 15
                             </div>
-                            <span class="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono">${stamps}/${total}</span>
                         </div>
-                        <div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
-                            <div class="bg-gradient-to-r from-blue-500 to-emerald-400 h-3 rounded-full transition-all duration-1000" style="width: ${progress}%"></div>
+
+                        ${feedbackHTML}
+
+                        <!-- Progress Card (Gamification) -->
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-lg flex-none">
+                            <div class="flex justify-between items-end mb-2">
+                                <div>
+                                    <h3 class="text-slate-900 dark:text-white font-bold"><i class="fas fa-medal text-amber-500 mr-2"></i>Mission Progress</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Collect stamps by taking notes.</p>
+                                </div>
+                                <span class="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono">${stamps}/${total}</span>
+                            </div>
+                            <div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+                                <div class="bg-gradient-to-r from-blue-500 to-emerald-400 h-3 rounded-full transition-all duration-1000" style="width: ${progress}%"></div>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Quick Actions -->
-                    <div class="grid grid-cols-2 gap-4">
-                        <button onclick="window.renderView('prep')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all text-left group">
-                            <div class="bg-blue-100 dark:bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20">
-                                <i class="fas fa-clipboard-check text-blue-600 dark:text-blue-400"></i>
-                            </div>
-                            <h3 class="font-bold text-slate-900 dark:text-slate-200">Pre-Check</h3>
-                            <p class="text-xs text-slate-500 mt-1">Get ready</p>
-                        </button>
-                        <button onclick="window.renderView('passport')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 transition-all text-left group">
-                            <div class="bg-emerald-100 dark:bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20">
-                                <i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400"></i>
-                            </div>
-                            <h3 class="font-bold text-slate-900 dark:text-slate-200">Notes</h3>
-                            <p class="text-xs text-slate-500 mt-1">Draft reflection</p>
-                        </button>
-                    </div>
+                        <!-- Quick Actions -->
+                        <div class="grid grid-cols-2 gap-4 flex-none">
+                            <button onclick="window.renderView('prep')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all text-left group">
+                                <div class="bg-blue-100 dark:bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20">
+                                    <i class="fas fa-clipboard-check text-blue-600 dark:text-blue-400"></i>
+                                </div>
+                                <h3 class="font-bold text-slate-900 dark:text-slate-200">Pre-Check</h3>
+                                <p class="text-xs text-slate-500 mt-1">Get ready</p>
+                            </button>
+                            <button onclick="window.renderView('passport')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 transition-all text-left group">
+                                <div class="bg-emerald-100 dark:bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20">
+                                    <i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400"></i>
+                                </div>
+                                <h3 class="font-bold text-slate-900 dark:text-slate-200">Notes</h3>
+                                <p class="text-xs text-slate-500 mt-1">Draft reflection</p>
+                            </button>
+                        </div>
 
-                    <!-- Rotation Preview -->
-                    <div>
-                        <h3 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 ml-1">Learning Rotations</h3>
-                        <div class="space-y-3">
-                            <button onclick="window.goToPassportTab('iot')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-purple-500 dark:hover:border-purple-500 transition-colors group">
-                                <div class="bg-purple-100 dark:bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 dark:group-hover:bg-purple-500/20 transition-colors"><i class="fas fa-microchip text-purple-600 dark:text-purple-400"></i></div>
-                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">IoT Innovation</h4><p class="text-xs text-slate-500">Connected devices</p></div>
-                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
-                            </button>
-                            <button onclick="window.goToPassportTab('sec')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-red-500 dark:hover:border-red-500 transition-colors group">
-                                <div class="bg-red-100 dark:bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-red-200 dark:group-hover:bg-red-500/20 transition-colors"><i class="fas fa-shield-alt text-red-600 dark:text-red-400"></i></div>
-                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Secure the Network</h4><p class="text-xs text-slate-500">Cybersecurity</p></div>
-                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
-                            </button>
-                            <button onclick="window.goToPassportTab('ai')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500 dark:hover:border-blue-500 transition-colors group">
-                                <div class="bg-blue-100 dark:bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20 transition-colors"><i class="fas fa-robot text-blue-600 dark:text-blue-400"></i></div>
-                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">AI for Good</h4><p class="text-xs text-slate-500">Artificial Intelligence</p></div>
-                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
-                            </button>
-                            <button onclick="window.goToPassportTab('panel')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors group">
-                                <div class="bg-emerald-100 dark:bg-emerald-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20 transition-colors"><i class="fas fa-users text-emerald-600 dark:text-emerald-400"></i></div>
-                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Professional Panel</h4><p class="text-xs text-slate-500">Q&A Session</p></div>
-                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
-                            </button>
+                        <!-- Rotation Preview -->
+                        <div class="flex-none">
+                            <h3 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 ml-1">Learning Rotations</h3>
+                            <div class="space-y-3">
+                                <button onclick="window.goToPassportTab('iot')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-purple-500 dark:hover:border-purple-500 transition-colors group">
+                                    <div class="bg-purple-100 dark:bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 dark:group-hover:bg-purple-500/20 transition-colors"><i class="fas fa-microchip text-purple-600 dark:text-purple-400"></i></div>
+                                    <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">IoT Innovation</h4><p class="text-xs text-slate-500">Connected devices</p></div>
+                                    <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                                </button>
+                                <button onclick="window.goToPassportTab('sec')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-red-500 dark:hover:border-red-500 transition-colors group">
+                                    <div class="bg-red-100 dark:bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-red-200 dark:group-hover:bg-red-500/20 transition-colors"><i class="fas fa-shield-alt text-red-600 dark:text-red-400"></i></div>
+                                    <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Secure the Network</h4><p class="text-xs text-slate-500">Cybersecurity</p></div>
+                                    <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                                </button>
+                                <button onclick="window.goToPassportTab('ai')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500 dark:hover:border-blue-500 transition-colors group">
+                                    <div class="bg-blue-100 dark:bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20 transition-colors"><i class="fas fa-robot text-blue-600 dark:text-blue-400"></i></div>
+                                    <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">AI for Good</h4><p class="text-xs text-slate-500">Artificial Intelligence</p></div>
+                                    <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                                </button>
+                                <button onclick="window.goToPassportTab('panel')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors group">
+                                    <div class="bg-emerald-100 dark:bg-emerald-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20 transition-colors"><i class="fas fa-users text-emerald-600 dark:text-emerald-400"></i></div>
+                                    <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Professional Panel</h4><p class="text-xs text-slate-500">Q&A Session</p></div>
+                                    <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1342,12 +1410,12 @@
 
         function getAgendaView() {
             return `<br>
-                <div class="space-y-4 fade-in pt-4">
-                    <div class="flex justify-between items-end mb-2">
+                <div class="h-full flex flex-col fade-in pt-2">
+                    <div class="flex justify-between items-end mb-2 flex-none">
                         <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Agenda</h2>
                         <span class="text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span>
                     </div>
-                    <div class="relative border-l-2 border-gray-300 dark:border-slate-700 ml-3 space-y-8 pb-4">
+                    <div class="relative border-l-2 border-gray-300 dark:border-slate-700 ml-3 space-y-8 pb-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                          <!-- Items omitted for brevity but logic remains same with light/dark classes -->
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Meet at front entrance. Don't be late!</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:00 AM</span><i class="fas fa-map-marker-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">GMCS Student Support Center (SSC)</p></div></div>
@@ -1380,49 +1448,48 @@
             
             if (currentPassportTab === 'iot') {
                 contentHTML = `
-                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in flex-1 flex flex-col min-h-0">
                         ${getStamp('iot')}
                         ${getTeacherStamp('iot')}
-                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mr-3 text-purple-600 dark:text-purple-400"><i class="fas fa-microchip text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">IoT Innovation</h3><p class="text-xs text-slate-500">Smart Devices & Sensors</p></div></div>
-                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
-                        <textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-purple-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="What problem were you solving? How did the sensor work?">${notes1}</textarea>
+                        <div class="flex items-center mb-4 flex-none"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mr-3 text-purple-600 dark:text-purple-400"><i class="fas fa-microchip text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">IoT Innovation</h3><p class="text-xs text-slate-500">Smart Devices & Sensors</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex-none">My Notes</p>
+                        <textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-purple-500 h-64 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="What problem were you solving? How did the sensor work?">${notes1}</textarea>
                     </div>`;
             } else if (currentPassportTab === 'sec') {
                 contentHTML = `
-                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in flex-1 flex flex-col min-h-0">
                         ${getStamp('sec')}
                         ${getTeacherStamp('sec')}
-                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mr-3 text-red-600 dark:text-red-400"><i class="fas fa-shield-alt text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Secure the Network</h3><p class="text-xs text-slate-500">Cybersecurity Defense</p></div></div>
-                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
-                        <textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-red-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Why is protection important? What tactics did you use?">${notes2}</textarea>
+                        <div class="flex items-center mb-4 flex-none"><div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mr-3 text-red-600 dark:text-red-400"><i class="fas fa-shield-alt text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Secure the Network</h3><p class="text-xs text-slate-500">Cybersecurity Defense</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex-none">My Notes</p>
+                        <textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-red-500 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Why is protection important? What tactics did you use?">${notes2}</textarea>
                     </div>`;
             } else if (currentPassportTab === 'ai') {
                 contentHTML = `
-                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in flex-1 flex flex-col min-h-0">
                         ${getStamp('ai')}
                         ${getTeacherStamp('ai')}
-                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fas fa-robot text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">AI for Good</h3><p class="text-xs text-slate-500">Artificial Intelligence</p></div></div>
-                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
-                        <textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Who benefits from your solution? How did AI help?">${notes3}</textarea>
+                        <div class="flex items-center mb-4 flex-none"><div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fas fa-robot text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">AI for Good</h3><p class="text-xs text-slate-500">Artificial Intelligence</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex-none">My Notes</p>
+                        <textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Who benefits from your solution? How did AI help?">${notes3}</textarea>
                     </div>`;
             } else if (currentPassportTab === 'panel') {
                 contentHTML = `
-                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in flex-1 flex flex-col min-h-0">
                         ${getStamp('panel')}
                         ${getTeacherStamp('panel')}
-                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center mr-3 text-emerald-600 dark:text-emerald-400"><i class="fas fa-users text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Professional Panel</h3><p class="text-xs text-slate-500">Career Q&A</p></div></div>
-                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
-                        <textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Which career path interested you? What was the best advice?">${notes4}</textarea>
+                        <div class="flex items-center mb-4 flex-none"><div class="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center mr-3 text-emerald-600 dark:text-emerald-400"><i class="fas fa-users text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Professional Panel</h3><p class="text-xs text-slate-500">Career Q&A</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex-none">My Notes</p>
+                        <textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Which career path interested you? What was the best advice?">${notes4}</textarea>
                     </div>`;
             }
 
             return `<br>
-                <div class="space-y-4 fade-in pt-4 relative">
-                    ${getReviewStamp()}
-                    <div class="text-center mb-2"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Digital Passport</h2><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Select a rotation to add notes.</p></div>
+                <div class="h-full flex flex-col pt-2 pb-4 relative fade-in">
+                    <div class="text-center mb-2 flex-none"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Digital Passport</h2><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Select a rotation to add notes.</p></div>
                     
                     <!-- Tabs -->
-                    <div class="flex gap-2 mb-4 overflow-x-auto pb-2">
+                    <div class="flex gap-2 mb-4 overflow-x-auto pb-2 flex-none">
                         ${tabBtn('iot', 'fa-microchip', 'IoT')}
                         ${tabBtn('sec', 'fa-shield-alt', 'Security')}
                         ${tabBtn('ai', 'fa-robot', 'AI')}
@@ -1431,11 +1498,10 @@
 
                     ${contentHTML}
 
-                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1 mt-4">
+                    <div class="flex-none pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1 mt-2">
                         <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button>
                         <button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button>
                     </div>
-                    <p class="text-center text-[10px] text-slate-500 mt-2 pb-4">Paste into your College & Career Passport later.</p>
                 </div>
             `;
         }
@@ -1488,23 +1554,23 @@
                     <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getStamp('reflection')}
                         ${getTeacherStamp('q1')}
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-4 flex-none">
                             <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400"><i class="fas fa-lightbulb text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Biggest Takeaway</h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 1</p>
                             </div>
                         </div>
-                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3">What is the most important thing you learned today? Be specific!</p>
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3 flex-none">What is the most important thing you learned today? Be specific!</p>
                         <textarea oninput="window.saveReflection('q1', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 resize-none" placeholder="I learned that...">${r.q1 || ''}</textarea>
                     </div>
                 </div>`,
 
                 // Slide 1: Q2 Careers
                 `<div class="h-full flex flex-col slide-in-right">
-                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col overflow-hidden">
                         ${getTeacherStamp('q2')}
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-4 flex-none">
                             <div class="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400"><i class="fas fa-briefcase text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Career Paths</h3>
@@ -1524,7 +1590,7 @@
 
                 // Slide 2: Q3 Skills (Updated 2x2 Grid with Checkboxes)
                 `<div class="h-full flex flex-col slide-in-right">
-                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col overflow-hidden">
                         ${getTeacherStamp('q3')}
                         <div class="flex items-center gap-3 mb-3 flex-none">
                             <div class="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400"><i class="fas fa-tools text-2xl"></i></div>
@@ -1581,33 +1647,33 @@
                 `<div class="h-full flex flex-col slide-in-right">
                     <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q4')}
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-4 flex-none">
                             <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400"><i class="fas fa-bolt text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Surprise!</h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 4</p>
                             </div>
                         </div>
-                        <p class="text-base text-slate-600 dark:text-slate-300 mb-6">What is one thing that surprised you the most today?</p>
-                        <div class="relative">
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-6 flex-none">What is one thing that surprised you the most today?</p>
+                        <div class="relative flex-1 flex flex-col">
                             <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 pl-12 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500" placeholder="I was surprised that...">
-                            <i class="fas fa-pen absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 text-lg"></i>
+                            <i class="fas fa-pen absolute left-4 top-4 text-slate-400 text-lg"></i>
                         </div>
                     </div>
                 </div>`,
 
                 // Slide 4: Q5 Goals
                 `<div class="h-full flex flex-col slide-in-right">
-                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col overflow-hidden">
                         ${getTeacherStamp('q5')}
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-4 flex-none">
                             <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400"><i class="fas fa-road text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Career Impact</h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 5 • Select one</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 gap-3 flex-1">
+                        <div class="grid grid-cols-1 gap-3 flex-1 overflow-y-auto pr-1">
                             ${choiceCard('q5', 'More Interested', 'I am MORE interested in this field.', 'fa-arrow-up')}
                             ${choiceCard('q5', 'Learned New', 'I learned something NEW about jobs.', 'fa-lightbulb')}
                             ${choiceCard('q5', 'Still Exploring', 'I am still exploring my options.', 'fa-search')}
@@ -1620,35 +1686,39 @@
                 `<div class="h-full flex flex-col slide-in-right">
                     <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q6')}
-                        <div class="flex items-center gap-3 mb-4">
+                        <div class="flex items-center gap-3 mb-4 flex-none">
                             <div class="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400"><i class="fas fa-graduation-cap text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">What's Next?</h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 6</p>
                             </div>
                         </div>
-                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3">What topic or skill do you want to learn more about?</p>
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3 flex-none">What topic or skill do you want to learn more about?</p>
                         <textarea oninput="window.saveReflection('q6', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 resize-none" placeholder="I want to look up...">${r.q6 || ''}</textarea>
                     </div>
                 </div>`,
 
                 // Slide 6: Q7 Rating
                 `<div class="h-full flex flex-col slide-in-right">
-                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col overflow-hidden">
                         ${getTeacherStamp('q7')}
-                        <div class="flex items-center gap-3 mb-6">
+                        <div class="flex items-center gap-3 mb-6 flex-none">
                             <div class="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400"><i class="fas fa-star text-2xl"></i></div>
                             <div>
                                 <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Final Rating</h3>
                                 <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 7 • How was it?</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4 flex-1">
+                        <div class="grid grid-cols-2 gap-4 flex-1 overflow-y-auto pb-4">
                             ${choiceCard('q7', 'Excellent', 'Excellent', 'fa-grin-stars')}
                             ${choiceCard('q7', 'Good', 'Good', 'fa-smile')}
                             ${choiceCard('q7', 'Okay', 'Okay', 'fa-meh')}
                             ${choiceCard('q7', 'Needs Improvement', 'Needs Work', 'fa-frown')}
                         </div>
+                        <!-- Submit Button on Last Slide -->
+                        <button onclick="window.submitReflection()" class="flex-none mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center">
+                            Submit Reflection <i class="fas fa-paper-plane ml-2"></i>
+                        </button>
                     </div>
                 </div>`
             ];
@@ -1660,9 +1730,9 @@
             const progress = ((currentReflectionSlide + 1) / slides.length) * 100;
 
             return `<br>
-                <div class="h-full flex flex-col pt-2 pb-24 relative fade-in">
+                <div class="h-full flex flex-col pt-2 relative fade-in">
                     <!-- Header Row with Buttons -->
-                    <div class="flex justify-between items-center mb-4 px-1">
+                    <div class="flex justify-between items-center mb-4 px-1 flex-none">
                         <div>
                             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Reflection</h2>
                             <p class="text-xs text-slate-500 dark:text-slate-400">Step ${currentReflectionSlide + 1} of ${slides.length}</p>
@@ -1681,7 +1751,7 @@
                     </div>` : ''}
 
                     <!-- Progress Bar -->
-                    <div class="w-full bg-gray-200 dark:bg-slate-700 h-1.5 rounded-full mb-4 overflow-hidden">
+                    <div class="w-full bg-gray-200 dark:bg-slate-700 h-1.5 rounded-full mb-4 overflow-hidden flex-none">
                         <div class="bg-blue-500 h-full transition-all duration-300" style="width: ${progress}%"></div>
                     </div>
 
@@ -1691,12 +1761,12 @@
                     </div>
 
                     <!-- Navigation Footer -->
-                    <div class="mt-4 flex justify-between items-center px-1">
+                    <div class="mt-4 mb-2 flex justify-between items-center px-1 flex-none">
                         <button onclick="window.prevReflectionSlide()" class="px-4 py-2 rounded-lg bg-gray-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors border border-gray-200 dark:border-slate-700 ${isFirst ? 'opacity-0 pointer-events-none' : ''}">
                             <i class="fas fa-arrow-left mr-1"></i> Back
                         </button>
                         
-                        <button onclick="window.nextReflectionSlide()" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm hover:bg-blue-500 transition-colors shadow-lg ${isLast ? 'opacity-50 pointer-events-none' : ''}">
+                        <button onclick="window.nextReflectionSlide()" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm hover:bg-blue-500 transition-colors shadow-lg ${isLast ? 'hidden' : ''}">
                             Next <i class="fas fa-arrow-right ml-1"></i>
                         </button>
                     </div>
@@ -1709,4 +1779,3 @@
     </script>
 </body>
 </html>
-
