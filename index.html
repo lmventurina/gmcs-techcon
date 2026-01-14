@@ -151,6 +151,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, getDocs, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // --- CONFIGURATION ---
         const firebaseConfig = {
@@ -164,6 +165,7 @@
         };
 
         const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
         const db = getFirestore(app);
         const appId = 'nph-techcon-v2';
 
@@ -171,10 +173,12 @@
         let userMode = 'student'; // 'student' or 'teacher'
         let currentEmail = null;
         let currentView = 'login';
+        let currentPassportTab = 'iot'; // NEW: Track active tab in passport
         let isGuestMode = false;
         
         let appData = {
             studentName: '',
+            classPeriod: '', // NEW: Added field
             notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
             checklist: { charged: false, pack: false, login: false, cisco: false },
             reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' },
@@ -186,7 +190,29 @@
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
 
-        // --- INIT ---
+        // --- AUTH & INIT ---
+        const initAuth = async () => {
+            try {
+                // Try to sign in with the environment's custom token first
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    // If no token exists, force error to trigger fallback
+                    throw new Error("No initial token");
+                }
+            } catch (error) {
+                // If custom token fails (e.g. project mismatch due to manual config) or is missing,
+                // fall back to Anonymous Auth which works for the specific projectId
+                console.warn("Custom token auth failed, switching to anonymous:", error.message);
+                try {
+                    await signInAnonymously(auth);
+                } catch (anonError) {
+                    console.error("Anonymous Auth Critical Error:", anonError);
+                    updateSyncStatus('offline');
+                }
+            }
+        };
+
         const initApp = () => {
             // Restore theme
             if (localStorage.getItem('theme') === 'light') {
@@ -195,10 +221,12 @@
 
             const savedEmail = localStorage.getItem('nph_student_email');
             const savedName = localStorage.getItem('nph_student_name');
+            const savedPeriod = localStorage.getItem('nph_student_period');
             
             if (savedEmail && savedName) {
                 currentEmail = savedEmail;
                 appData.studentName = savedName;
+                if(savedPeriod) appData.classPeriod = savedPeriod;
                 startDataListener(currentEmail);
                 window.renderView('home');
             } else {
@@ -226,7 +254,7 @@
                 updateSyncStatus('guest');
                 return;
             }
-            if (!emailKey) return;
+            if (!emailKey || !auth.currentUser) return;
             
             const safeId = emailKey.replace(/\//g, '_'); 
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
@@ -253,10 +281,7 @@
             }, (error) => {
                 console.error("Sync error", error);
                 updateSyncStatus('offline');
-                if(!isGuestMode) {
-                    const guestConfirm = confirm("Cloud Connection Failed. Switch to Guest Mode?");
-                    if(guestConfirm) window.enableGuestMode(appData.studentName);
-                }
+                // Removed auto-prompt for guest mode to prevent spamming
             });
         };
 
@@ -266,11 +291,13 @@
                 updateSyncStatus('guest');
                 return;
             }
-            if (!currentEmail) return;
+            if (!currentEmail || !auth.currentUser) return;
             try {
                 const safeId = currentEmail.replace(/\//g, '_');
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', safeId);
-                await setDoc(docRef, appData, { merge: true });
+                // Add lastActive timestamp for teacher dashboard
+                const dataToSave = { ...appData, lastActive: Date.now() };
+                await setDoc(docRef, dataToSave, { merge: true });
                 updateSyncStatus('online');
             } catch (e) {
                 console.error("Save failed", e);
@@ -292,6 +319,7 @@
         };
 
         window.refreshTeacherData = async () => {
+            if (!auth.currentUser) return;
             try {
                 updateSyncStatus('syncing');
                 const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'student_profiles'));
@@ -301,7 +329,11 @@
                     teacherData.push({ id: doc.id, ...doc.data() });
                 });
                 
-                if(currentView === 'teacher-dashboard') renderTeacherTable(teacherData);
+                if(currentView === 'teacher-dashboard') {
+                    // Reset filter visual to 'All' on refresh, or keep previous logic if desired
+                    // For now, render full list
+                    renderTeacherTable(teacherData);
+                }
                 if(currentView === 'teacher-presentation') window.renderView('teacher-presentation'); 
                 
                 updateSyncStatus('online');
@@ -449,10 +481,16 @@
             if (viewName === 'login' || viewName === 'teacher-login') {
                 header.classList.add('hidden');
                 nav.classList.add('hidden');
+                // Remove spacing that causes scroll on login
+                container.classList.remove('pb-24', 'p-4');
+                container.classList.add('p-0');
             } else {
                 header.classList.remove('hidden');
                 if (userMode === 'student') nav.classList.remove('hidden');
                 else nav.classList.add('hidden');
+                // Restore spacing for app content
+                container.classList.add('pb-24', 'p-4');
+                container.classList.remove('p-0');
             }
 
             if (userMode === 'student') {
@@ -485,12 +523,19 @@
         window.login = async () => {
             const name = document.getElementById('student-name-input').value.trim();
             const email = document.getElementById('student-email-input').value.trim().toLowerCase();
-            if (name.length === 0 || email.length === 0) { alert("Please enter both Name and Email."); return; }
+            const period = document.getElementById('student-period-input').value;
+
+            if (name.length === 0 || email.length === 0 || period === "") { 
+                alert("Please enter Name, Email, and select a Class Period."); 
+                return; 
+            }
 
             localStorage.setItem('nph_student_email', email);
             localStorage.setItem('nph_student_name', name);
+            localStorage.setItem('nph_student_period', period);
             
             appData.studentName = name; 
+            appData.classPeriod = period;
             currentEmail = email;
             userMode = 'student';
             
@@ -502,6 +547,10 @@
             isGuestMode = true;
             userMode = 'student';
             appData.studentName = name || "Guest";
+            // Guest mode doesn't strictly require period but good to simulate
+            const periodInput = document.getElementById('student-period-input');
+            if(periodInput && periodInput.value) appData.classPeriod = periodInput.value;
+            
             startDataListener(null); 
             window.renderView('home');
             alert("Guest Mode Active: Notes save to THIS device only.");
@@ -539,6 +588,18 @@
             saveTimeout = setTimeout(saveToCloud, 3600000); 
         }
 
+        // NEW: Navigation helper for Passport Tabs
+        window.switchPassportTab = (tab) => {
+            currentPassportTab = tab;
+            window.renderView('passport');
+        };
+
+        // NEW: Helper to go from Home directly to a specific tab
+        window.goToPassportTab = (tab) => {
+            currentPassportTab = tab;
+            window.renderView('passport');
+        };
+
         window.manualSave = () => {
             clearTimeout(saveTimeout); 
             saveToCloud().then(() => showToast("Saved to Cloud!"));
@@ -568,7 +629,7 @@
 
         function getTeacherStamp(key) {
             if (appData.teacherReviews && appData.teacherReviews[key]) {
-                return `
+                return `<br>
                 <div class="absolute -top-3 -right-3 z-10 pointer-events-none select-none stamp-animation">
                     <div class="flex flex-col items-center justify-center transform rotate-12 border-2 border-emerald-500 bg-emerald-900/80 text-emerald-400 rounded-full w-12 h-12 shadow-lg backdrop-blur-sm">
                         <i class="fas fa-thumbs-up text-lg"></i>
@@ -579,10 +640,8 @@
         }
 
         function getReviewStamp() {
-            // Simplified global review logic if needed, or remove if unused. 
-            // Currently using granular stamps, but kept this for 'overall' review if implemented.
              if (Object.values(appData.teacherReviews || {}).some(v => v === true)) {
-                 return `
+                 return `<br>
                 <div class="absolute top-4 right-4 z-10 pointer-events-none select-none stamp-animation">
                     <div class="flex flex-col items-center justify-center transform rotate-12 border-4 border-emerald-500/50 text-emerald-500/50 rounded-full w-24 h-24 bg-transparent backdrop-blur-[1px]">
                         <i class="fas fa-thumbs-up text-3xl mb-1"></i>
@@ -595,17 +654,31 @@
 
         // --- TEACHER HELPERS ---
         function updateTeacherCharts(data) {
+            // Q7 Satisfaction
             const counts = { 'Excellent': 0, 'Good': 0, 'Okay': 0, 'Needs Improvement': 0 };
+            // Q5 Career Goals
+            const goalCounts = { 'More Interested': 0, 'Learned New': 0, 'Still Exploring': 0, 'Not For Me': 0 };
+            
             let totalRated = 0;
+            let totalGoals = 0;
 
             data.forEach(s => {
-                const r = s.reflection?.q7;
-                if (r && counts[r] !== undefined) {
-                    counts[r]++;
+                const r = s.reflection || {};
+                
+                // Q7
+                if (r.q7 && counts[r.q7] !== undefined) {
+                    counts[r.q7]++;
                     totalRated++;
+                }
+
+                // Q5
+                if (r.q5 && goalCounts[r.q5] !== undefined) {
+                    goalCounts[r.q5]++;
+                    totalGoals++;
                 }
             });
 
+            // Update Q7 Bars
             const base = totalRated === 0 ? 1 : totalRated;
             const setBar = (idSuffix, count) => {
                 const percent = (count / base) * 100;
@@ -619,6 +692,21 @@
             setBar('good', counts['Good']);
             setBar('okay', counts['Okay']);
             setBar('bad', counts['Needs Improvement']);
+
+            // Update Q5 Bars
+            const baseGoals = totalGoals === 0 ? 1 : totalGoals;
+            const setGoalBar = (idSuffix, count) => {
+                const percent = (count / baseGoals) * 100;
+                const elBar = document.getElementById(`bar-goal-${idSuffix}`);
+                const elVal = document.getElementById(`val-goal-${idSuffix}`);
+                if(elBar) elBar.style.width = `${percent}%`;
+                if(elVal) elVal.innerText = `${count} (${Math.round(percent)}%)`;
+            };
+
+            setGoalBar('more', goalCounts['More Interested']);
+            setGoalBar('new', goalCounts['Learned New']);
+            setGoalBar('still', goalCounts['Still Exploring']);
+            setGoalBar('not', goalCounts['Not For Me']);
         }
 
         function renderTeacherTable(data) {
@@ -626,6 +714,15 @@
             
             if(document.getElementById('stat-count')) {
                 document.getElementById('stat-count').innerText = data.length;
+                
+                // Calculate Online (Active < 5 mins ago)
+                const now = Date.now();
+                const online = data.filter(s => s.lastActive && (now - s.lastActive) < 300000).length;
+                const offline = data.length - online;
+                
+                if(document.getElementById('stat-online')) document.getElementById('stat-online').innerText = online;
+                if(document.getElementById('stat-offline')) document.getElementById('stat-offline').innerText = offline;
+
                 document.getElementById('stat-active').innerText = data.filter(s => {
                     const r = s.reflection || {};
                     return (r.q1 && r.q1.length > 0);
@@ -637,7 +734,7 @@
             tbody.innerHTML = '';
 
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500">No students found yet.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500">No students found yet.</td></tr>`;
                 return;
             }
 
@@ -656,6 +753,9 @@
                     <td class="p-3 font-medium text-slate-900 dark:text-white">
                         <div>${student.studentName || 'Unknown'}</div>
                         <div class="text-xs text-slate-500 font-mono truncate max-w-[150px]">${student.id}</div>
+                    </td>
+                    <td class="p-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400">
+                        ${student.classPeriod ? 'P' + student.classPeriod : '-'}
                     </td>
                     <td class="p-3 text-center flex gap-1 justify-center items-center h-full">
                         ${checkIcon(list.charged, 'fa-bolt')}
@@ -690,7 +790,7 @@
             
             const renderReviewableBlock = (key, title, text, color) => {
                 const isChecked = tReviews[key] ? 'checked' : '';
-                return `
+                return `<br>
                 <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
                     <div class="flex justify-between items-start mb-2">
                         <h4 class="text-${color}-600 dark:text-${color}-400 font-bold text-sm uppercase">${title}</h4>
@@ -703,14 +803,14 @@
                 </div>`;
             };
             
-            const checkStatus = (val, label) => `
+            const checkStatus = (val, label) => `<br>
                 <div class="flex items-center gap-2 ${val ? 'text-emerald-500 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}">
                     <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}"></i>
                     <span class="text-sm">${label}</span>
                 </div>`;
 
             // TABBED CONTENT CONSTRUCTION
-            content.innerHTML = `
+            content.innerHTML = `<br>
                 <!-- Tabs -->
                 <div class="flex border-b border-gray-200 dark:border-slate-700 mb-6">
                     <button id="btn-modal-overview" onclick="window.switchModalTab('overview')" class="flex-1 pb-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 transition-colors">Overview</button>
@@ -765,7 +865,7 @@
 
         window.exportCSV = () => {
             if (teacherData.length === 0) { alert("No data."); return; }
-            let csv = "Name,Email_ID,Teacher_Feedback,Charged,Packed,Login_Verified,Cisco_Installed,IoT Notes,Security Notes,AI Notes,Panel Notes,Custom Questions,Reflection_Learned,Reflection_Careers,Reflection_Skills,Reflection_Surprised,Reflection_Goals,Reflection_LearnMore,Reflection_Rating\n";
+            let csv = "Name,Period,Email_ID,Teacher_Feedback,Charged,Packed,Login_Verified,Cisco_Installed,IoT Notes,Security Notes,AI Notes,Panel Notes,Custom Questions,Reflection_Learned,Reflection_Careers,Reflection_Skills,Reflection_Surprised,Reflection_Goals,Reflection_LearnMore,Reflection_Rating\n";
             teacherData.forEach(s => {
                 const n = s.notes || {};
                 const l = s.checklist || {};
@@ -773,7 +873,7 @@
                 const clean = (txt) => `"${(txt || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
                 const cleanArr = (arr) => `"${(arr || []).join('; ')}"`;
                 
-                csv += `${clean(s.studentName)},${clean(s.id)},${clean(s.teacherComment)},${l.charged},${l.pack},${l.login},${l.cisco},${clean(n.iot)},${clean(n.sec)},${clean(n.ai)},${clean(n.panel)},${clean(n.custom_q)},${clean(r.q1)},${cleanArr(r.q2)},${cleanArr(r.q3)},${clean(r.q4)},${clean(r.q5)},${clean(r.q6)},${clean(r.q7)}\n`;
+                csv += `${clean(s.studentName)},${s.classPeriod || ''},${clean(s.id)},${clean(s.teacherComment)},${l.charged},${l.pack},${l.login},${l.cisco},${clean(n.iot)},${clean(n.sec)},${clean(n.ai)},${clean(n.panel)},${clean(n.custom_q)},${clean(r.q1)},${cleanArr(r.q2)},${cleanArr(r.q3)},${clean(r.q4)},${clean(r.q5)},${clean(r.q6)},${clean(r.q7)}\n`;
             });
             const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
             const a = document.createElement('a');
@@ -781,9 +881,26 @@
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
         };
 
-        window.filterTeacherList = (term) => {
-            const lower = term.toLowerCase();
-            const filtered = teacherData.filter(s => (s.studentName && s.studentName.toLowerCase().includes(lower)) || (s.id && s.id.toLowerCase().includes(lower)));
+        window.filterTeacherList = () => {
+            const searchInput = document.getElementById('search-input');
+            const periodSelect = document.getElementById('period-filter');
+            
+            // Guard clause if elements aren't rendered yet
+            if (!searchInput) return;
+
+            const term = searchInput.value.toLowerCase();
+            const period = periodSelect ? periodSelect.value : 'all';
+            
+            const filtered = teacherData.filter(s => {
+                // 1. Text Search
+                const nameMatch = (s.studentName && s.studentName.toLowerCase().includes(term)) || 
+                                  (s.id && s.id.toLowerCase().includes(term));
+                
+                // 2. Period Filter
+                const periodMatch = period === 'all' || (s.classPeriod && s.classPeriod === period);
+
+                return nameMatch && periodMatch;
+            });
             renderTeacherTable(filtered);
         };
 
@@ -811,11 +928,31 @@
                         <div class="mb-8"><i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i><h2 class="text-3xl font-bold text-slate-900 dark:text-white">NPH TechCon</h2><p class="text-slate-500 dark:text-slate-400 mt-2">Enter your info to sync notes.</p></div>
                         <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xl text-left">
                             <div class="mb-4"><label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">First & Last Name</label><input type="text" id="student-name-input" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600" placeholder="Jane Doe"></div>
+                            
+                            <div class="mb-4">
+                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Class Period</label>
+                                <select id="student-period-input" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none">
+                                    <option value="" disabled selected>Select Period</option>
+                                    <option value="1">Period 1</option>
+                                    <option value="2">Period 2</option>
+                                    <option value="3">Period 3</option>
+                                    <option value="4">Period 4</option>
+                                    <option value="5">Period 5</option>
+                                    <option value="6">Period 6</option>
+                                    <option value="7">Period 7</option>
+                                    <option value="8">Period 8</option>
+                                </select>
+                            </div>
+
                             <div class="mb-6"><label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">School Email</label><input type="email" id="student-email-input" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600" placeholder="jane.doe@school.edu"></div>
                             <button onclick="window.login()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mb-4">Start App <i class="fas fa-arrow-right ml-2"></i></button>
                             <button onclick="window.enableGuestMode(document.getElementById('student-name-input').value)" class="w-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 text-sm font-semibold py-3 rounded-lg transition-all"><i class="fas fa-hdd mr-2"></i> Guest Mode</button>
                         </div>
-                        <p class="text-center mt-8"><button onclick="window.renderView('teacher-login')" class="text-xs text-slate-500 dark:text-slate-600 hover:text-amber-500 transition-colors">Faculty Access</button></p>
+                        <div class="mt-6 text-center">
+                            <button onclick="window.renderView('teacher-login')" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-white/50 dark:hover:bg-slate-800/50 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all">
+                                <i class="fas fa-chalkboard-teacher"></i> Faculty Access
+                            </button>
+                        </div>
                     </div>
                 </div>`;
         }
@@ -836,40 +973,78 @@
         }
 
         function getTeacherDashboardView() {
-            return `
+            return `<br>
                 <div class="h-full flex flex-col fade-in">
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                         <div class="lg:col-span-1 space-y-4">
-                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
-                                <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Total Students</p><h3 class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-count">0</h3></div>
-                                <div class="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-xl"></i></div>
+                            <!-- Updated Total Students Card with Online/Offline stats -->
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Total Students</p><h3 class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-count">0</h3></div>
+                                    <div class="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-xl"></i></div>
+                                </div>
+                                <div class="flex items-center gap-3 text-xs pt-2 border-t border-gray-100 dark:border-slate-700">
+                                    <span class="text-emerald-500 dark:text-emerald-400 font-bold flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-online" class="mr-1">0</span> Online</span>
+                                    <span class="text-slate-400 dark:text-slate-500 font-medium flex items-center"><i class="fas fa-circle text-[6px] mr-1.5"></i> <span id="stat-offline" class="mr-1">0</span> Offline</span>
+                                </div>
                             </div>
+
                             <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
                                 <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="stat-active">0</h3></div>
                                 <div class="bg-emerald-100 dark:bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400 text-xl"></i></div>
                             </div>
                         </div>
 
-                        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                            <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
-                            <div class="space-y-3">
-                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile-beam text-emerald-500 dark:text-emerald-400 mr-2"></i> Excellent</span><span id="val-excellent" class="font-mono text-emerald-600 dark:text-emerald-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile text-blue-500 dark:text-blue-400 mr-2"></i> Good</span><span id="val-good" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-meh text-amber-500 dark:text-amber-400 mr-2"></i> Okay</span><span id="val-okay" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
-                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-frown text-red-500 dark:text-red-400 mr-2"></i> Needs Work</span><span id="val-bad" class="font-mono text-red-600 dark:text-red-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                        <!-- Changed to grid for side-by-side charts -->
+                        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <!-- Satisfaction Chart -->
+                            <div>
+                                <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
+                                <div class="space-y-3">
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile-beam text-emerald-500 dark:text-emerald-400 mr-2"></i> Excellent</span><span id="val-excellent" class="font-mono text-emerald-600 dark:text-emerald-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile text-blue-500 dark:text-blue-400 mr-2"></i> Good</span><span id="val-good" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-meh text-amber-500 dark:text-amber-400 mr-2"></i> Okay</span><span id="val-okay" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-frown text-red-500 dark:text-red-400 mr-2"></i> Needs Work</span><span id="val-bad" class="font-mono text-red-600 dark:text-red-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                </div>
                             </div>
+
+                            <!-- Career Goals Chart -->
+                            <div>
+                                <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Impact on Career Goals</h3>
+                                <div class="space-y-3">
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-rocket text-purple-500 dark:text-purple-400 mr-2"></i> More Interested</span><span id="val-goal-more" class="font-mono text-purple-600 dark:text-purple-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-more" class="bg-purple-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-lightbulb text-blue-500 dark:text-blue-400 mr-2"></i> Learned New</span><span id="val-goal-new" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-new" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-search text-amber-500 dark:text-amber-400 mr-2"></i> Still Exploring</span><span id="val-goal-still" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-still" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                    <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-ban text-slate-500 dark:text-slate-400 mr-2"></i> Not For Me</span><span id="val-goal-not" class="font-mono text-slate-600 dark:text-slate-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-goal-not" class="bg-slate-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
 
                     <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col">
-                        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
-                            <h3 class="font-bold text-slate-900 dark:text-white text-sm"><i class="fas fa-users mr-2"></i> Responses</h3>
-                            <input type="text" onkeyup="window.filterTeacherList(this.value)" placeholder="Search..." class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-3 py-1 text-xs text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none">
+                        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 gap-4">
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-bold text-slate-900 dark:text-white text-sm whitespace-nowrap"><i class="fas fa-users mr-2"></i> Responses</h3>
+                                <select id="period-filter" onchange="window.filterTeacherList()" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-2 py-1 text-xs text-slate-700 dark:text-slate-300 focus:border-amber-500 focus:outline-none">
+                                    <option value="all">All Periods</option>
+                                    <option value="1">Period 1</option>
+                                    <option value="2">Period 2</option>
+                                    <option value="3">Period 3</option>
+                                    <option value="4">Period 4</option>
+                                    <option value="5">Period 5</option>
+                                    <option value="6">Period 6</option>
+                                    <option value="7">Period 7</option>
+                                    <option value="8">Period 8</option>
+                                </select>
+                            </div>
+                            <input type="text" id="search-input" onkeyup="window.filterTeacherList()" placeholder="Search..." class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-3 py-1 text-xs text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none">
                         </div>
                         <div class="overflow-y-auto flex-1 p-0">
                             <table class="w-full text-left border-collapse">
-                                <thead class="bg-gray-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
-                                <tbody id="teacher-table-body" class="divide-y divide-gray-200 dark:divide-slate-700 text-sm text-slate-700 dark:text-slate-300"><tr><td colspan="7" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
+                                <thead class="bg-gray-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Period</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
+                                <tbody id="teacher-table-body" class="divide-y divide-gray-200 dark:divide-slate-700 text-sm text-slate-700 dark:text-slate-300"><tr><td colspan="8" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -879,7 +1054,7 @@
         function getTeacherPresentationView() {
             // Aggregate Qs from teacherData
             const studentQs = teacherData.filter(s => s.notes && s.notes.custom_q && s.notes.custom_q.trim().length > 0)
-                .map(s => `
+                .map(s => `<br>
                     <div class="bg-white dark:bg-slate-700 p-4 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg">
                         <p class="text-slate-800 dark:text-white text-lg font-medium">"${s.notes.custom_q}"</p>
                         <p class="text-slate-500 dark:text-slate-400 text-xs mt-2 text-right uppercase tracking-wider font-bold">- ${s.studentName}</p>
@@ -890,7 +1065,7 @@
                 ? `<div class="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-2">${studentQs}</div>` 
                 : `<div class="text-center text-slate-400 dark:text-slate-500 py-12 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl">No student questions submitted yet.</div>`;
 
-            return `
+            return `<br>
                 <div class="h-full overflow-y-auto fade-in pr-2 pb-12">
                     <div class="max-w-3xl mx-auto space-y-12">
                         <!-- Slide 1: Welcome -->
@@ -981,8 +1156,20 @@
             const stamps = calculateStamps();
             const total = 5; 
             const progress = (stamps / total) * 100;
+            const tComment = appData.teacherComment;
 
-            return `
+            let feedbackHTML = '';
+            if (tComment && tComment.length > 0) {
+                feedbackHTML = `
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl relative overflow-hidden fade-in">
+                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
+                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
+                        <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
+                    </div>
+                `;
+            }
+
+            return `<br>
                 <div class="space-y-6 fade-in pt-4">
                     <!-- Hero Card -->
                     <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden">
@@ -993,6 +1180,8 @@
                             <i class="far fa-calendar-alt mr-2"></i>Thursday, Jan 15
                         </div>
                     </div>
+
+                    ${feedbackHTML}
 
                     <!-- Progress Card (Gamification) -->
                     <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-lg">
@@ -1030,18 +1219,26 @@
                     <div>
                         <h3 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 ml-1">Learning Rotations</h3>
                         <div class="space-y-3">
-                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
-                                <div class="bg-purple-100 dark:bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-microchip text-purple-600 dark:text-purple-400"></i></div>
+                            <button onclick="window.goToPassportTab('iot')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-purple-500 dark:hover:border-purple-500 transition-colors group">
+                                <div class="bg-purple-100 dark:bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200 dark:group-hover:bg-purple-500/20 transition-colors"><i class="fas fa-microchip text-purple-600 dark:text-purple-400"></i></div>
                                 <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">IoT Innovation</h4><p class="text-xs text-slate-500">Connected devices</p></div>
-                            </div>
-                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
-                                <div class="bg-red-100 dark:bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-shield-alt text-red-600 dark:text-red-400"></i></div>
+                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                            </button>
+                            <button onclick="window.goToPassportTab('sec')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-red-500 dark:hover:border-red-500 transition-colors group">
+                                <div class="bg-red-100 dark:bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-red-200 dark:group-hover:bg-red-500/20 transition-colors"><i class="fas fa-shield-alt text-red-600 dark:text-red-400"></i></div>
                                 <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Secure the Network</h4><p class="text-xs text-slate-500">Cybersecurity</p></div>
-                            </div>
-                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
-                                <div class="bg-blue-100 dark:bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-robot text-blue-600 dark:text-blue-400"></i></div>
+                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                            </button>
+                            <button onclick="window.goToPassportTab('ai')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500 dark:hover:border-blue-500 transition-colors group">
+                                <div class="bg-blue-100 dark:bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20 transition-colors"><i class="fas fa-robot text-blue-600 dark:text-blue-400"></i></div>
                                 <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">AI for Good</h4><p class="text-xs text-slate-500">Artificial Intelligence</p></div>
-                            </div>
+                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                            </button>
+                            <button onclick="window.goToPassportTab('panel')" class="w-full text-left flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors group">
+                                <div class="bg-emerald-100 dark:bg-emerald-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20 transition-colors"><i class="fas fa-users text-emerald-600 dark:text-emerald-400"></i></div>
+                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Professional Panel</h4><p class="text-xs text-slate-500">Q&A Session</p></div>
+                                <i class="fas fa-chevron-right ml-auto text-slate-300 dark:text-slate-600"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1054,49 +1251,73 @@
             const isLogin = appData.checklist?.login || false;
             const isCisco = appData.checklist?.cisco || false;
             
-            // Revert questions list to 10 as requested in previous turn, to keep it concise
+            // Shortened questions for compact view
              const questions = [
-                "Do I really need a college degree, or are certifications enough?",
-                "How did you get your very first job in tech?",
-                "What does a 'bad day' at work look like for you?",
-                "What classes in high school actually helped you the most?",
-                "What coding language should a beginner learn first?",
-                "Is AI going to replace entry-level programming jobs?",
-                "How important are 'soft skills' compared to technical skills?",
-                "How do you handle stress and avoid burnout?",
-                "Which specific certifications are actually worth the money?",
-                "Who is your role model in the tech industry?"
+                "Do I really need a college degree?",
+                "How did you get your first tech job?",
+                "What does a 'bad day' look like?",
+                "Which HS classes helped the most?",
+                "Best coding language for beginners?",
+                "Will AI replace entry-level jobs?",
+                "Importance of 'soft skills'?",
+                "How to handle stress/burnout?",
+                "Which certifications are worth it?",
+                "Who is your role model?"
             ];
 
-            return `
-                <div class="space-y-6 fade-in pt-4">
-                    <div class="text-center mb-6"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Get Ready</h2></div>
-                    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 shadow-lg">
-                        <h3 class="text-blue-600 dark:text-blue-400 font-bold mb-4 flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
-                        <div class="space-y-4">
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Charge Laptop to 100%</span></div></label>
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Pack Laptop Charger</span></div></label>
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Verify School Login</span></div></label>
-                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Install Cisco Packet Tracer</span><span class="block text-xs text-slate-500">Required for Network Security rotation.</span></div></label>
-                        </div>
+            return `<br>
+                <div class="h-full flex flex-col pt-2 pb-2 fade-in">
+                    <div class="text-center mb-3 flex-none">
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Get Ready</h2>
                     </div>
-                    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 shadow-lg relative">
-                        <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-4 flex items-center"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
-                        <div class="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 mb-4">
-                            ${questions.map(q => `<div class="p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-amber-500/50 transition-colors group"><p class="text-xs text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white">"${q}"</p></div>`).join('')}
+                    
+                    <div class="flex-1 min-h-0 flex flex-col space-y-3 overflow-y-auto">
+                        <!-- Checklist -->
+                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm flex-none">
+                            <h3 class="text-blue-600 dark:text-blue-400 font-bold mb-2 text-xs uppercase tracking-wide flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Charge 100%</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Pack Charger</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Check Login</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Install Cisco</span>
+                                </label>
+                            </div>
                         </div>
-                        <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-2 flex items-center pt-4 border-t border-gray-200 dark:border-slate-700"><i class="fas fa-pen mr-2"></i> My Questions</h3>
-                        ${getTeacherStamp('custom_q')}
-                        <p class="text-xs text-slate-500 mb-2">Write your own questions here:</p>
-                        <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-400 dark:placeholder-slate-600 mb-2" placeholder="I want to ask...">${appData.notes?.custom_q || ''}</textarea>
-                        <button onclick="window.manualSave()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs font-bold transition-colors w-full"><i class="fas fa-save mr-1"></i> Save Question</button>
+
+                        <!-- Q&A Ideas -->
+                        <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm flex-1 flex flex-col min-h-0 relative">
+                            <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-2 text-xs uppercase tracking-wide flex items-center flex-none"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
+                            
+                            <div class="columns-2 gap-2 space-y-2 overflow-y-auto mb-3 flex-1 pr-1 custom-scrollbar">
+                                ${questions.map(q => `<div class="break-inside-avoid p-2 bg-gray-50 dark:bg-slate-900/50 rounded border border-gray-200 dark:border-slate-700/50 hover:border-amber-500/50 transition-colors"><p class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug">"${q}"</p></div>`).join('')}
+                            </div>
+                            
+                            <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex-none relative">
+                                ${getTeacherStamp('custom_q')}
+                                <div class="relative">
+                                    <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Type your own question...">${appData.notes?.custom_q || ''}</textarea>
+                                    <button onclick="window.manualSave()" class="absolute right-2 bottom-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors shadow-sm"><i class="fas fa-save mr-1"></i> Save</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
         }
 
         function getAgendaView() {
-            return `
+            return `<br>
                 <div class="space-y-4 fade-in pt-4">
                     <div class="flex justify-between items-end mb-2">
                         <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Agenda</h2>
@@ -1109,7 +1330,7 @@
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 1</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">IoT, Security, or AI Challenge</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">11:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 2</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Switch stations</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">12:15 PM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 3</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Final station</p></div></div>
-                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">1:25 PM</span><i class="fas fa-users text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Professional Panel</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Industry insights & Q&A</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">1:25 PM</span><i class="fas fa-users text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Professional Panel</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Industry insights & Q&A</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">2:10 PM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs SSC</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Return trip to Navajo Pine HS</p></div></div>
                     </div>
                 </div>
@@ -1118,55 +1339,75 @@
 
         function getPassportView() {
             const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
-            const tComment = appData.teacherComment;
             
-            let feedbackHTML = '';
-            if (tComment && tComment.length > 0) {
-                feedbackHTML = `
-                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
-                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
-                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
-                        <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
-                    </div>
-                `;
+            // Render Tab Buttons
+            const activeClass = "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-gray-200 dark:border-slate-600";
+            const inactiveClass = "bg-gray-100 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 border-transparent";
+            
+            const tabBtn = (id, icon, label) => `
+                <button onclick="window.switchPassportTab('${id}')" class="flex-1 flex flex-col items-center justify-center py-3 rounded-xl border transition-all ${currentPassportTab === id ? activeClass : inactiveClass}">
+                    <i class="fas ${icon} text-lg mb-1"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-wider">${label}</span>
+                </button>
+            `;
+
+            // Content Blocks based on active tab
+            let contentHTML = '';
+            
+            if (currentPassportTab === 'iot') {
+                contentHTML = `
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                        ${getStamp('iot')}
+                        ${getTeacherStamp('iot')}
+                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mr-3 text-purple-600 dark:text-purple-400"><i class="fas fa-microchip text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">IoT Innovation</h3><p class="text-xs text-slate-500">Smart Devices & Sensors</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
+                        <textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-purple-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="What problem were you solving? How did the sensor work?">${notes1}</textarea>
+                    </div>`;
+            } else if (currentPassportTab === 'sec') {
+                contentHTML = `
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                        ${getStamp('sec')}
+                        ${getTeacherStamp('sec')}
+                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mr-3 text-red-600 dark:text-red-400"><i class="fas fa-shield-alt text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Secure the Network</h3><p class="text-xs text-slate-500">Cybersecurity Defense</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
+                        <textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-red-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Why is protection important? What tactics did you use?">${notes2}</textarea>
+                    </div>`;
+            } else if (currentPassportTab === 'ai') {
+                contentHTML = `
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                        ${getStamp('ai')}
+                        ${getTeacherStamp('ai')}
+                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-3 text-blue-600 dark:text-blue-400"><i class="fas fa-robot text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">AI for Good</h3><p class="text-xs text-slate-500">Artificial Intelligence</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
+                        <textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Who benefits from your solution? How did AI help?">${notes3}</textarea>
+                    </div>`;
+            } else if (currentPassportTab === 'panel') {
+                contentHTML = `
+                    <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 fade-in">
+                        ${getStamp('panel')}
+                        ${getTeacherStamp('panel')}
+                        <div class="flex items-center mb-4"><div class="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center mr-3 text-emerald-600 dark:text-emerald-400"><i class="fas fa-users text-xl"></i></div><div><h3 class="font-bold text-slate-900 dark:text-white text-lg">Professional Panel</h3><p class="text-xs text-slate-500">Career Q&A</p></div></div>
+                        <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">My Notes</p>
+                        <textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500 h-64 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Which career path interested you? What was the best advice?">${notes4}</textarea>
+                    </div>`;
             }
 
-            return `
-                <div class="space-y-6 fade-in pt-4 relative">
+            return `<br>
+                <div class="space-y-4 fade-in pt-4 relative">
                     ${getReviewStamp()}
-                    <div class="text-center"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Digital Passport</h2><p class="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div>
-                    ${feedbackHTML}
-                    <div class="space-y-6">
-                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                            ${getStamp('iot')}
-                            ${getTeacherStamp('iot')}
-                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">IoT Innovation</h3></div>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">What problem were you solving?</p>
-                            <textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea>
-                        </div>
-                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                            ${getStamp('sec')}
-                            ${getTeacherStamp('sec')}
-                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">Secure the Network</h3></div>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Why is protection important?</p>
-                            <textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea>
-                        </div>
-                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                            ${getStamp('ai')}
-                            ${getTeacherStamp('ai')}
-                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">AI for Good</h3></div>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Who benefits from your solution?</p>
-                            <textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea>
-                        </div>
-                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
-                            ${getStamp('panel')}
-                            ${getTeacherStamp('panel')}
-                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">Professional Panel</h3></div>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Which career path interested you?</p>
-                            <textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea>
-                        </div>
+                    <div class="text-center mb-2"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Digital Passport</h2><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Select a rotation to add notes.</p></div>
+                    
+                    <!-- Tabs -->
+                    <div class="flex gap-2 mb-4 overflow-x-auto pb-2">
+                        ${tabBtn('iot', 'fa-microchip', 'IoT')}
+                        ${tabBtn('sec', 'fa-shield-alt', 'Security')}
+                        ${tabBtn('ai', 'fa-robot', 'AI')}
+                        ${tabBtn('panel', 'fa-users', 'Panel')}
                     </div>
-                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1">
+
+                    ${contentHTML}
+
+                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1 mt-4">
                         <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button>
                         <button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button>
                     </div>
@@ -1181,142 +1422,138 @@
             
             let feedbackHTML = '';
             if (tComment && tComment.length > 0) {
-                feedbackHTML = `
-                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
-                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
-                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
-                        <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
+                feedbackHTML = `<br>
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-3 rounded-xl mb-2 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-4xl text-amber-500"></i></div>
+                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-xs uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
+                        <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${tComment}</p>
                     </div>
                 `;
             }
 
             const checkBox = (key, val, label) => {
                 const checked = (r[key] || []).includes(val) ? 'checked' : '';
-                return `
-                <label class="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="checkbox" class="mt-1 form-checkbox text-blue-500 rounded bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-sm text-slate-600 dark:text-slate-300 select-none">${label}</span>
+                return `<label class="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="checkbox" class="form-checkbox text-blue-500 rounded bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0 w-4 h-4" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-xs text-slate-600 dark:text-slate-300 select-none">${label}</span>
                 </label>`;
             };
 
             const radioBox = (key, val, label) => {
                 const checked = r[key] === val ? 'checked' : '';
-                return `
-                <label class="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-sm text-slate-600 dark:text-slate-300 select-none">${label}</span>
+                return `<label class="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0 w-4 h-4" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-xs text-slate-600 dark:text-slate-300 select-none">${label}</span>
                 </label>`;
             };
 
-            return `
-                <div class="space-y-6 fade-in pt-4 pb-8 relative">
+            return `<div class="space-y-3 fade-in pt-2 pb-24 relative">
                     ${getReviewStamp()}
                     <div class="text-center">
-                        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Event Reflection</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Wrap up your experience.</p>
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Event Reflection</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Wrap up your experience.</p>
                     </div>
 
                     ${feedbackHTML}
 
                     <!-- Q1 -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getStamp('reflection')}
                         ${getTeacherStamp('q1')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">1. What was your biggest takeaway from today?</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">(2-3 Sentences)</p>
-                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I learned that...">${r.q1 || ''}</textarea>
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">1. Biggest takeaway?</h3>
+                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-16 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="I learned that...">${r.q1 || ''}</textarea>
                     </div>
 
-                    <!-- Q2 Careers (2-Column Grid) -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <!-- Q2 Careers -->
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q2')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">2. Which career paths did you explore?</h3>
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">2. Career paths explored?</h3>
                         <div class="grid grid-cols-2 gap-2">
                             ${checkBox('q2', 'Engineering', 'Engineering')}
-                            ${checkBox('q2', 'Health / Biomedical', 'Health / Biomedical')}
+                            ${checkBox('q2', 'Health / Biomedical', 'Health')}
                             ${checkBox('q2', 'Business', 'Business')}
                             ${checkBox('q2', 'Media', 'Media')}
-                            ${checkBox('q2', 'Tech / Cyber', 'Tech / Cyber')}
+                            ${checkBox('q2', 'Tech / Cyber', 'Tech')}
                             ${checkBox('q2', 'Trades', 'Trades')}
                         </div>
                     </div>
 
-                    <!-- Q3 Skills (2x2 Grid) -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <!-- Q3 Skills -->
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q3')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-1">3. GMCS Graduate Profile Skills</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Check 2-3 skills you used today.</p>
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">3. GMCS Skills Used</h3>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mb-2">Check 2-3 skills you used today.</p>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-2 gap-2">
                             <!-- Creative -->
-                            <div class="bg-purple-50 dark:bg-slate-900/30 p-3 rounded-lg border border-purple-200 dark:border-purple-500/20">
-                                <h4 class="text-purple-600 dark:text-purple-400 text-xs font-bold uppercase mb-2">Creative & Critical Thinker</h4>
-                                <div class="space-y-2">
-                                    ${checkBox('q3', 'Solved Problems', 'Solved Problems')}
-                                    ${checkBox('q3', 'Shared My Work', 'Shared My Work')}
-                                    ${checkBox('q3', 'Persevered', 'Persevered')}
+                            <div class="bg-purple-50 dark:bg-slate-900/30 p-2 rounded border border-purple-200 dark:border-purple-500/20">
+                                <h4 class="text-purple-600 dark:text-purple-400 text-[10px] font-bold uppercase mb-1">Creative & Critical</h4>
+                                <div class="space-y-1">
+                                    ${checkBox('q3', 'Solved Problems', 'Solved Problems').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Shared Work', 'Shared Work').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Persevered', 'Persevered').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
                                 </div>
                             </div>
                             <!-- Responsible -->
-                            <div class="bg-emerald-50 dark:bg-slate-900/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-                                <h4 class="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-2">Responsible Individual</h4>
-                                <div class="space-y-2">
-                                    ${checkBox('q3', 'Accountable', 'Accountable')}
-                                    ${checkBox('q3', 'Prepared', 'Prepared')}
-                                    ${checkBox('q3', 'Made Plans', 'Made Plans')}
+                            <div class="bg-emerald-50 dark:bg-slate-900/30 p-2 rounded border border-emerald-200 dark:border-emerald-500/20">
+                                <h4 class="text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase mb-1">Responsible Individual</h4>
+                                <div class="space-y-1">
+                                    ${checkBox('q3', 'Accountable', 'Accountable').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Prepared', 'Prepared').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Made Plans', 'Made Plans').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
                                 </div>
                             </div>
                             <!-- Collaborator -->
-                            <div class="bg-blue-50 dark:bg-slate-900/30 p-3 rounded-lg border border-blue-200 dark:border-blue-500/20">
-                                <h4 class="text-blue-600 dark:text-blue-400 text-xs font-bold uppercase mb-2">Effective Collaborator</h4>
-                                <div class="space-y-2">
-                                    ${checkBox('q3', 'Listened', 'Listened')}
-                                    ${checkBox('q3', 'Mutual Respect', 'Mutual Respect')}
-                                    ${checkBox('q3', 'Built Team', 'Built Team')}
+                            <div class="bg-blue-50 dark:bg-slate-900/30 p-2 rounded border border-blue-200 dark:border-blue-500/20">
+                                <h4 class="text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase mb-1">Collaborator</h4>
+                                <div class="space-y-1">
+                                    ${checkBox('q3', 'Listened', 'Listened').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Mutual Respect', 'Respect').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Built Team', 'Teamwork').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
                                 </div>
                             </div>
                             <!-- Learner -->
-                            <div class="bg-amber-50 dark:bg-slate-900/30 p-3 rounded-lg border border-amber-200 dark:border-amber-500/20">
-                                <h4 class="text-amber-600 dark:text-amber-400 text-xs font-bold uppercase mb-2">Lifelong Learner</h4>
-                                <div class="space-y-2">
-                                    ${checkBox('q3', 'Authentic', 'Authentic')}
-                                    ${checkBox('q3', 'Reflective', 'Reflective')}
-                                    ${checkBox('q3', 'Used Technology', 'Used Technology')}
+                            <div class="bg-amber-50 dark:bg-slate-900/30 p-2 rounded border border-amber-200 dark:border-amber-500/20">
+                                <h4 class="text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase mb-1">Lifelong Learner</h4>
+                                <div class="space-y-1">
+                                    ${checkBox('q3', 'Authentic', 'Authentic').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Reflective', 'Reflective').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                    ${checkBox('q3', 'Used Technology', 'Used Tech').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Q4 Surprise -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q4')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">4. What surprised you the most today?</h3>
-                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-400 dark:placeholder-slate-600" placeholder="One short sentence...">
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">4. What surprised you?</h3>
+                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-400 dark:placeholder-slate-600" placeholder="One short sentence...">
                     </div>
 
-                    <!-- Q5 Goals (2-Column Grid) -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <!-- Q5 Goals -->
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q5')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">5. Impact on career goals?</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            ${radioBox('q5', 'More Interested', 'I am more interested')}
-                            ${radioBox('q5', 'Learned New', 'I learned something new')}
-                            ${radioBox('q5', 'Still Exploring', 'I am still exploring')}
-                            ${radioBox('q5', 'Not For Me', 'This may not be for me')}
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">5. Impact on career goals?</h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${radioBox('q5', 'More Interested', 'More Interested')}
+                            ${radioBox('q5', 'Learned New', 'Learned New')}
+                            ${radioBox('q5', 'Still Exploring', 'Still Exploring')}
+                            ${radioBox('q5', 'Not For Me', 'Not For Me')}
                         </div>
                     </div>
 
                     <!-- Q6 Next -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q6')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">6. What do you want to learn more about next?</h3>
-                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-20 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I want to look up...">${r.q6 || ''}</textarea>
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">6. What do you want to learn next?</h3>
+                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-12 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="I want to look up...">${r.q6 || ''}</textarea>
                     </div>
 
-                    <!-- Q7 Rating (2-Column Grid) -->
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                    <!-- Q7 Rating -->
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
                         ${getTeacherStamp('q7')}
-                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">7. Rate experience</h3>
+                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">7. Rate experience</h3>
                         <div class="grid grid-cols-2 gap-2">
                             ${radioBox('q7', 'Excellent', 'Excellent 🤩')}
                             ${radioBox('q7', 'Good', 'Good 🙂')}
@@ -1334,8 +1571,7 @@
         }
 
         // Start App
-        initApp();
+        initAuth().then(() => initApp());
     </script>
 </body>
 </html>
-
