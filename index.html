@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPH TechCon</title>
+    <title>NPH TechCon V2</title>
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%233b82f6%22/><text x=%2250%22 y=%2265%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22>NPH</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -594,6 +594,27 @@
             if (currentReflectionSlide > 0) {
                 currentReflectionSlide--;
                 window.renderView('reflection');
+            }
+        };
+
+        // NEW: Auto-bullet list handler for custom questions
+        window.handleBulletInput = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const value = textarea.value;
+                
+                // insert newline and bullet
+                const replacement = "\n• ";
+                textarea.value = value.substring(0, start) + replacement + value.substring(end);
+                
+                // move cursor
+                textarea.selectionStart = textarea.selectionEnd = start + replacement.length;
+                
+                // Trigger save
+                window.saveNote('custom_q', textarea.value);
             }
         };
 
@@ -1269,46 +1290,48 @@
             return `<br>
                 <div class="h-full flex flex-col pt-2 pb-2 fade-in">
                     <div class="text-center mb-3 flex-none">
-                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Get Ready</h2>
+                        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Get Ready</h2>
                     </div>
                     
-                    <div class="flex-1 min-h-0 flex flex-col space-y-3 overflow-y-auto">
-                        <!-- Checklist -->
+                    <div class="flex-1 min-h-0 flex flex-col space-y-3 overflow-hidden">
+                        <!-- Checklist (Fixed Height / Flex-none) -->
                         <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm flex-none">
-                            <h3 class="text-blue-600 dark:text-blue-400 font-bold mb-2 text-xs uppercase tracking-wide flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
+                            <h3 class="text-blue-600 dark:text-blue-400 font-bold mb-2 text-sm uppercase tracking-wide flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
                             <div class="grid grid-cols-2 gap-3">
                                 <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
-                                    <div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
-                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Charge 100%</span>
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-5 h-5 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[10px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-sm font-medium text-slate-700 dark:text-slate-300">Charge 100%</span>
                                 </label>
                                 <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
-                                    <div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
-                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Pack Charger</span>
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-5 h-5 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[10px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-sm font-medium text-slate-700 dark:text-slate-300">Pack Charger</span>
                                 </label>
                                 <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
-                                    <div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
-                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Check Login</span>
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-5 h-5 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[10px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-sm font-medium text-slate-700 dark:text-slate-300">Check Login</span>
                                 </label>
                                 <label class="flex items-center cursor-pointer group bg-gray-50 dark:bg-slate-900/50 p-2 rounded border border-transparent hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
-                                    <div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-4 h-4 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[8px] opacity-0 peer-checked:opacity-100"></i></div></div>
-                                    <span class="ml-2 text-xs font-medium text-slate-700 dark:text-slate-300">Install Cisco</span>
+                                    <div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-5 h-5 bg-white dark:bg-slate-800 border border-gray-400 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center"><i class="fas fa-check text-white text-[10px] opacity-0 peer-checked:opacity-100"></i></div></div>
+                                    <span class="ml-2 text-sm font-medium text-slate-700 dark:text-slate-300">Install Cisco</span>
                                 </label>
                             </div>
                         </div>
 
-                        <!-- Q&A Ideas -->
+                        <!-- Q&A Card (Flex-1 to fill remaining height) -->
                         <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm flex-1 flex flex-col min-h-0 relative">
-                            <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-2 text-xs uppercase tracking-wide flex items-center flex-none"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
+                            <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-2 text-sm uppercase tracking-wide flex items-center flex-none"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
                             
+                            <!-- SPLIT 50/50: Changed to flex-1 to share space equally with input area -->
                             <div class="columns-2 gap-2 space-y-2 overflow-y-auto mb-3 flex-1 pr-1 custom-scrollbar">
-                                ${questions.map(q => `<div class="break-inside-avoid p-2 bg-gray-50 dark:bg-slate-900/50 rounded border border-gray-200 dark:border-slate-700/50 hover:border-amber-500/50 transition-colors"><p class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug">"${q}"</p></div>`).join('')}
+                                ${questions.map(q => `<div class="break-inside-avoid p-3 bg-gray-50 dark:bg-slate-900/50 rounded border border-gray-200 dark:border-slate-700/50 hover:border-amber-500/50 transition-colors"><p class="text-sm text-slate-600 dark:text-slate-400 leading-snug">"${q}"</p></div>`).join('')}
                             </div>
                             
-                            <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex-none relative">
+                            <!-- Input Area takes other 50% -->
+                            <div class="pt-2 border-t border-gray-100 dark:border-slate-700 flex-1 flex flex-col min-h-0 relative">
                                 ${getTeacherStamp('custom_q')}
-                                <div class="relative">
-                                    <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Type your own question...">${appData.notes?.custom_q || ''}</textarea>
-                                    <button onclick="window.manualSave()" class="absolute right-2 bottom-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors shadow-sm"><i class="fas fa-save mr-1"></i> Save</button>
+                                <div class="flex flex-col gap-2 h-full">
+                                    <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" onkeydown="window.handleBulletInput(event)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 flex-1 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="Type your own question... (Press Enter for new bullet)">${appData.notes?.custom_q || ''}</textarea>
+                                    <button onclick="window.manualSave()" class="flex-none bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs font-bold uppercase transition-colors shadow-sm w-full flex items-center justify-center gap-2"><i class="fas fa-save"></i> Save Question</button>
                                 </div>
                             </div>
                         </div>
@@ -1686,4 +1709,3 @@
     </script>
 </body>
 </html>
-
