@@ -189,6 +189,7 @@
         let teacherData = []; 
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
+        let presenceInterval = null;
 
         // --- AUTH & INIT ---
         const initAuth = async () => {
@@ -261,9 +262,25 @@
             
             if (unsubscribeSnapshot) unsubscribeSnapshot();
 
+            // Clear any existing heartbeat
+            if (presenceInterval) clearInterval(presenceInterval);
+            
+            // Initial heartbeat
+            saveToCloud(true);
+            
+            // Start heartbeat interval (every 2 minutes) to keep "Online" status green
+            presenceInterval = setInterval(() => saveToCloud(true), 120000);
+
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const fetchedData = docSnap.data();
+                    
+                    // Smart Diff: Check if data actually changed to avoid re-rendering and losing focus
+                    // We exclude 'lastActive' from the check because that changes constantly on heartbeat
+                    const currentClean = { ...appData }; delete currentClean.lastActive;
+                    const fetchedClean = { ...fetchedData }; delete fetchedClean.lastActive;
+                    const hasContentChanged = JSON.stringify(currentClean) !== JSON.stringify(fetchedClean);
+
                     appData = {
                         ...appData,
                         ...fetchedData,
@@ -273,9 +290,15 @@
                         teacherReviews: { ...appData.teacherReviews, ...(fetchedData.teacherReviews || {}) }
                     };
                     updateHeader();
-                    if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
+                    
+                    // Only re-render if content changed OR if we are moving from login to home
+                    if (userMode === 'student') {
+                        if (currentView === 'login' || hasContentChanged) {
+                            window.renderView(currentView === 'login' ? 'home' : currentView);
+                        }
+                    }
                 } else {
-                    saveToCloud();
+                    saveToCloud(true);
                 }
                 updateSyncStatus('online');
             }, (error) => {
@@ -285,7 +308,7 @@
             });
         };
 
-        async function saveToCloud() {
+        async function saveToCloud(silent = false) {
             if (isGuestMode) {
                 localStorage.setItem('nph_guest_data', JSON.stringify(appData));
                 updateSyncStatus('guest');
@@ -299,6 +322,7 @@
                 const dataToSave = { ...appData, lastActive: Date.now() };
                 await setDoc(docRef, dataToSave, { merge: true });
                 updateSyncStatus('online');
+                if (!silent) showToast("Saved!"); // Only show toast on manual saves
             } catch (e) {
                 console.error("Save failed", e);
                 updateSyncStatus('offline');
@@ -563,6 +587,7 @@
             isGuestMode = false;
             userMode = 'student';
             if (unsubscribeSnapshot) unsubscribeSnapshot();
+            if (presenceInterval) clearInterval(presenceInterval); // Stop heartbeat
             appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false }, reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' }, teacherComment: '', teacherReviews: {} };
             window.renderView('login');
         };
@@ -602,7 +627,7 @@
 
         window.manualSave = () => {
             clearTimeout(saveTimeout); 
-            saveToCloud().then(() => showToast("Saved to Cloud!"));
+            saveToCloud(false).then(() => {}); // Explicitly not silent
         };
 
         // --- GAMIFICATION HELPERS ---
@@ -805,7 +830,7 @@
             
             const checkStatus = (val, label) => `<br>
                 <div class="flex items-center gap-2 ${val ? 'text-emerald-500 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}">
-                    <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                    <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}</i>
                     <span class="text-sm">${label}</span>
                 </div>`;
 
@@ -1251,7 +1276,6 @@
             const isLogin = appData.checklist?.login || false;
             const isCisco = appData.checklist?.cisco || false;
             
-            // Shortened questions for compact view
              const questions = [
                 "Do I really need a college degree?",
                 "How did you get your first tech job?",
@@ -1324,7 +1348,6 @@
                         <span class="text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span>
                     </div>
                     <div class="relative border-l-2 border-gray-300 dark:border-slate-700 ml-3 space-y-8 pb-4">
-                         <!-- Items omitted for brevity but logic remains same with light/dark classes -->
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Meet at front entrance. Don't be late!</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:00 AM</span><i class="fas fa-map-marker-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">GMCS Student Support Center (SSC)</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 1</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">IoT, Security, or AI Challenge</p></div></div>
@@ -1340,7 +1363,6 @@
         function getPassportView() {
             const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
             
-            // Render Tab Buttons
             const activeClass = "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-gray-200 dark:border-slate-600";
             const inactiveClass = "bg-gray-100 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 border-transparent";
             
@@ -1351,7 +1373,6 @@
                 </button>
             `;
 
-            // Content Blocks based on active tab
             let contentHTML = '';
             
             if (currentPassportTab === 'iot') {
