@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPH TechCon</title>
+    <title>NPH TechCon V2</title>
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%233b82f6%22/><text x=%2250%22 y=%2265%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22>NPH</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -34,9 +34,11 @@
 
         .neon-text { text-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
         .stamp-animation { animation: stampIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
         
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes stampIn { 
             0% { opacity: 0; transform: scale(2) rotate(-10deg); } 
             100% { opacity: 1; transform: scale(1) rotate(-10deg); } 
@@ -173,37 +175,33 @@
         let userMode = 'student'; // 'student' or 'teacher'
         let currentEmail = null;
         let currentView = 'login';
-        let currentPassportTab = 'iot'; // NEW: Track active tab in passport
+        let currentPassportTab = 'iot'; 
+        let currentReflectionSlide = 0; // NEW: Track reflection slide
         let isGuestMode = false;
         
         let appData = {
             studentName: '',
-            classPeriod: '', // NEW: Added field
+            classPeriod: '', 
             notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
             checklist: { charged: false, pack: false, login: false, cisco: false },
             reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' },
             teacherComment: '',
-            teacherReviews: {} // Stores review status for individual items { 'iot': true, 'q1': false }
+            teacherReviews: {} 
         };
 
         let teacherData = []; 
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
-        let presenceInterval = null;
 
         // --- AUTH & INIT ---
         const initAuth = async () => {
             try {
-                // Try to sign in with the environment's custom token first
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    // If no token exists, force error to trigger fallback
                     throw new Error("No initial token");
                 }
             } catch (error) {
-                // If custom token fails (e.g. project mismatch due to manual config) or is missing,
-                // fall back to Anonymous Auth which works for the specific projectId
                 console.warn("Custom token auth failed, switching to anonymous:", error.message);
                 try {
                     await signInAnonymously(auth);
@@ -262,25 +260,9 @@
             
             if (unsubscribeSnapshot) unsubscribeSnapshot();
 
-            // Clear any existing heartbeat
-            if (presenceInterval) clearInterval(presenceInterval);
-            
-            // Initial heartbeat
-            saveToCloud(true);
-            
-            // Start heartbeat interval (every 2 minutes) to keep "Online" status green
-            presenceInterval = setInterval(() => saveToCloud(true), 120000);
-
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const fetchedData = docSnap.data();
-                    
-                    // Smart Diff: Check if data actually changed to avoid re-rendering and losing focus
-                    // We exclude 'lastActive' from the check because that changes constantly on heartbeat
-                    const currentClean = { ...appData }; delete currentClean.lastActive;
-                    const fetchedClean = { ...fetchedData }; delete fetchedClean.lastActive;
-                    const hasContentChanged = JSON.stringify(currentClean) !== JSON.stringify(fetchedClean);
-
                     appData = {
                         ...appData,
                         ...fetchedData,
@@ -290,25 +272,18 @@
                         teacherReviews: { ...appData.teacherReviews, ...(fetchedData.teacherReviews || {}) }
                     };
                     updateHeader();
-                    
-                    // Only re-render if content changed OR if we are moving from login to home
-                    if (userMode === 'student') {
-                        if (currentView === 'login' || hasContentChanged) {
-                            window.renderView(currentView === 'login' ? 'home' : currentView);
-                        }
-                    }
+                    if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
                 } else {
-                    saveToCloud(true);
+                    saveToCloud();
                 }
                 updateSyncStatus('online');
             }, (error) => {
                 console.error("Sync error", error);
                 updateSyncStatus('offline');
-                // Removed auto-prompt for guest mode to prevent spamming
             });
         };
 
-        async function saveToCloud(silent = false) {
+        async function saveToCloud() {
             if (isGuestMode) {
                 localStorage.setItem('nph_guest_data', JSON.stringify(appData));
                 updateSyncStatus('guest');
@@ -322,7 +297,6 @@
                 const dataToSave = { ...appData, lastActive: Date.now() };
                 await setDoc(docRef, dataToSave, { merge: true });
                 updateSyncStatus('online');
-                if (!silent) showToast("Saved!"); // Only show toast on manual saves
             } catch (e) {
                 console.error("Save failed", e);
                 updateSyncStatus('offline');
@@ -354,8 +328,6 @@
                 });
                 
                 if(currentView === 'teacher-dashboard') {
-                    // Reset filter visual to 'All' on refresh, or keep previous logic if desired
-                    // For now, render full list
                     renderTeacherTable(teacherData);
                 }
                 if(currentView === 'teacher-presentation') window.renderView('teacher-presentation'); 
@@ -400,18 +372,14 @@
         window.toggleItemReview = async (studentId, key, isChecked) => {
             try {
                 updateSyncStatus('syncing');
-                // Optimistic Update
                 const s = teacherData.find(s => s.id === studentId);
                 if(s) {
                     if(!s.teacherReviews) s.teacherReviews = {};
                     s.teacherReviews[key] = isChecked;
                 }
-
-                // Firestore Update
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
                 const updatePayload = {};
                 updatePayload[`teacherReviews.${key}`] = isChecked;
-                
                 await setDoc(docRef, updatePayload, { merge: true });
                 updateSyncStatus('online');
             } catch(e) {
@@ -421,7 +389,6 @@
         }
 
         window.switchModalTab = (tabName) => {
-            // Hide all tabs
             ['overview', 'passport', 'reflection'].forEach(t => {
                 const el = document.getElementById(`modal-tab-${t}`);
                 const btn = document.getElementById(`btn-modal-${t}`);
@@ -431,8 +398,6 @@
                     btn.classList.add('text-slate-500', 'dark:text-slate-400');
                 }
             });
-            
-            // Show selected
             const targetEl = document.getElementById(`modal-tab-${tabName}`);
             const targetBtn = document.getElementById(`btn-modal-${tabName}`);
             if (targetEl) targetEl.classList.remove('hidden');
@@ -505,14 +470,12 @@
             if (viewName === 'login' || viewName === 'teacher-login') {
                 header.classList.add('hidden');
                 nav.classList.add('hidden');
-                // Remove spacing that causes scroll on login
                 container.classList.remove('pb-24', 'p-4');
                 container.classList.add('p-0');
             } else {
                 header.classList.remove('hidden');
                 if (userMode === 'student') nav.classList.remove('hidden');
                 else nav.classList.add('hidden');
-                // Restore spacing for app content
                 container.classList.add('pb-24', 'p-4');
                 container.classList.remove('p-0');
             }
@@ -529,7 +492,6 @@
                 }
             }
 
-            // Route Render
             if (viewName === 'login') container.innerHTML = getLoginView();
             else if (viewName === 'teacher-login') container.innerHTML = getTeacherLoginView();
             else if (viewName === 'teacher-dashboard') container.innerHTML = getTeacherDashboardView();
@@ -571,7 +533,6 @@
             isGuestMode = true;
             userMode = 'student';
             appData.studentName = name || "Guest";
-            // Guest mode doesn't strictly require period but good to simulate
             const periodInput = document.getElementById('student-period-input');
             if(periodInput && periodInput.value) appData.classPeriod = periodInput.value;
             
@@ -587,7 +548,6 @@
             isGuestMode = false;
             userMode = 'student';
             if (unsubscribeSnapshot) unsubscribeSnapshot();
-            if (presenceInterval) clearInterval(presenceInterval); // Stop heartbeat
             appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false }, reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' }, teacherComment: '', teacherReviews: {} };
             window.renderView('login');
         };
@@ -613,21 +573,33 @@
             saveTimeout = setTimeout(saveToCloud, 3600000); 
         }
 
-        // NEW: Navigation helper for Passport Tabs
         window.switchPassportTab = (tab) => {
             currentPassportTab = tab;
             window.renderView('passport');
         };
 
-        // NEW: Helper to go from Home directly to a specific tab
         window.goToPassportTab = (tab) => {
             currentPassportTab = tab;
             window.renderView('passport');
         };
 
+        // NEW: Reflection Navigation
+        window.nextReflectionSlide = () => {
+            if (currentReflectionSlide < 6) {
+                currentReflectionSlide++;
+                window.renderView('reflection');
+            }
+        };
+        window.prevReflectionSlide = () => {
+            if (currentReflectionSlide > 0) {
+                currentReflectionSlide--;
+                window.renderView('reflection');
+            }
+        };
+
         window.manualSave = () => {
             clearTimeout(saveTimeout); 
-            saveToCloud(false).then(() => {}); // Explicitly not silent
+            saveToCloud().then(() => showToast("Saved to Cloud!"));
         };
 
         // --- GAMIFICATION HELPERS ---
@@ -772,12 +744,24 @@
                 
                 const checkIcon = (val, icon) => `<i class="fas ${icon} ${val ? 'text-emerald-400' : 'text-slate-300 dark:text-slate-700'} text-xs"></i>`;
 
+                // Calculate Online Status for Table Row
+                const now = Date.now();
+                const isOnline = student.lastActive && (now - student.lastActive) < 300000; // 5 mins
+                const onlineDot = isOnline 
+                    ? `<div class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse border border-white dark:border-slate-900 shadow-sm flex-none" title="Online Now"></div>`
+                    : `<div class="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-600 border border-white dark:border-slate-900 flex-none" title="Offline"></div>`;
+
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors border-b border-gray-200 dark:border-slate-700/50 last:border-0";
                 tr.innerHTML = `
                     <td class="p-3 font-medium text-slate-900 dark:text-white">
-                        <div>${student.studentName || 'Unknown'}</div>
-                        <div class="text-xs text-slate-500 font-mono truncate max-w-[150px]">${student.id}</div>
+                        <div class="flex items-center gap-2">
+                            ${onlineDot}
+                            <div class="min-w-0">
+                                <div>${student.studentName || 'Unknown'}</div>
+                                <div class="text-xs text-slate-500 font-mono truncate max-w-[150px]">${student.id}</div>
+                            </div>
+                        </div>
                     </td>
                     <td class="p-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400">
                         ${student.classPeriod ? 'P' + student.classPeriod : '-'}
@@ -830,7 +814,7 @@
             
             const checkStatus = (val, label) => `<br>
                 <div class="flex items-center gap-2 ${val ? 'text-emerald-500 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}">
-                    <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}</i>
+                    <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}"></i>
                     <span class="text-sm">${label}</span>
                 </div>`;
 
@@ -909,27 +893,19 @@
         window.filterTeacherList = () => {
             const searchInput = document.getElementById('search-input');
             const periodSelect = document.getElementById('period-filter');
-            
-            // Guard clause if elements aren't rendered yet
             if (!searchInput) return;
 
             const term = searchInput.value.toLowerCase();
             const period = periodSelect ? periodSelect.value : 'all';
             
             const filtered = teacherData.filter(s => {
-                // 1. Text Search
-                const nameMatch = (s.studentName && s.studentName.toLowerCase().includes(term)) || 
-                                  (s.id && s.id.toLowerCase().includes(term));
-                
-                // 2. Period Filter
+                const nameMatch = (s.studentName && s.studentName.toLowerCase().includes(term)) || (s.id && s.id.toLowerCase().includes(term));
                 const periodMatch = period === 'all' || (s.classPeriod && s.classPeriod === period);
-
                 return nameMatch && periodMatch;
             });
             renderTeacherTable(filtered);
         };
 
-        // --- CLIPBOARD ---
         window.copyAllNotes = () => {
             const fullText = `MY CONVENTION NOTES (${appData.studentName})\n\n[IoT]\n${appData.notes.iot}\n\n[Security]\n${appData.notes.sec}\n\n[AI]\n${appData.notes.ai}\n\n[Panel]\n${appData.notes.panel}\n\n[Qs]\n${appData.notes.custom_q}\n\n[REFLECTION]\nLearned: ${appData.reflection.q1}\nSurprised: ${appData.reflection.q4}`;
             const textArea = document.createElement("textarea");
@@ -1276,6 +1252,7 @@
             const isLogin = appData.checklist?.login || false;
             const isCisco = appData.checklist?.cisco || false;
             
+            // Shortened questions for compact view
              const questions = [
                 "Do I really need a college degree?",
                 "How did you get your first tech job?",
@@ -1348,6 +1325,7 @@
                         <span class="text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span>
                     </div>
                     <div class="relative border-l-2 border-gray-300 dark:border-slate-700 ml-3 space-y-8 pb-4">
+                         <!-- Items omitted for brevity but logic remains same with light/dark classes -->
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Meet at front entrance. Don't be late!</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:00 AM</span><i class="fas fa-map-marker-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">GMCS Student Support Center (SSC)</p></div></div>
                         <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 1</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">IoT, Security, or AI Challenge</p></div></div>
@@ -1363,6 +1341,7 @@
         function getPassportView() {
             const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
             
+            // Render Tab Buttons
             const activeClass = "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border-gray-200 dark:border-slate-600";
             const inactiveClass = "bg-gray-100 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-800 border-transparent";
             
@@ -1373,6 +1352,7 @@
                 </button>
             `;
 
+            // Content Blocks based on active tab
             let contentHTML = '';
             
             if (currentPassportTab === 'iot') {
@@ -1441,151 +1421,261 @@
             const r = appData.reflection || {};
             const tComment = appData.teacherComment;
             
-            let feedbackHTML = '';
-            if (tComment && tComment.length > 0) {
-                feedbackHTML = `<br>
-                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-3 rounded-xl mb-2 relative overflow-hidden">
-                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-4xl text-amber-500"></i></div>
-                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-xs uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
-                        <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${tComment}</p>
-                    </div>
-                `;
-            }
+            // --- Improved Styling Components ---
+            
+            // Choice Card (for Careers & Ratings)
+            // Uses flex column for icon + text, turns blue/emerald when checked
+            const choiceCard = (key, val, label, iconClass) => {
+                const isSelected = (Array.isArray(r[key]) && r[key].includes(val)) || r[key] === val;
+                
+                const baseClass = "relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 cursor-pointer text-center h-full";
+                const selectedClass = "bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 shadow-md transform scale-[1.02]";
+                const unselectedClass = "bg-white dark:bg-slate-800 border-gray-100 dark:border-slate-700 text-slate-500 hover:border-blue-300 hover:bg-gray-50 dark:hover:bg-slate-700/50";
+                
+                // Determine input type
+                const inputType = key === 'q2' ? 'checkbox' : 'radio'; // Q2 is multi-select
+                const isCheckedAttr = isSelected ? 'checked' : '';
 
-            const checkBox = (key, val, label) => {
-                const checked = (r[key] || []).includes(val) ? 'checked' : '';
-                return `<label class="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="checkbox" class="form-checkbox text-blue-500 rounded bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0 w-4 h-4" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-xs text-slate-600 dark:text-slate-300 select-none">${label}</span>
+                return `
+                <label class="${baseClass} ${isSelected ? selectedClass : unselectedClass}">
+                    <input type="${inputType}" name="${key}" class="sr-only" ${isCheckedAttr} onchange="window.saveReflection('${key}', '${val}')">
+                    ${iconClass ? `<i class="fas ${iconClass} text-2xl mb-2 ${isSelected ? 'text-blue-500' : 'text-slate-300'}"></i>` : ''}
+                    <span class="text-sm font-bold leading-tight">${label}</span>
+                    ${isSelected ? '<div class="absolute top-2 right-2 text-blue-500"><i class="fas fa-check-circle"></i></div>' : ''}
                 </label>`;
             };
 
-            const radioBox = (key, val, label) => {
-                const checked = r[key] === val ? 'checked' : '';
-                return `<label class="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0 w-4 h-4" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-xs text-slate-600 dark:text-slate-300 select-none">${label}</span>
+            // Updated: Checkbox Helper for Q3
+            const skillCheckbox = (key, val, title, desc) => {
+                const isSelected = (r[key] || []).includes(val);
+                return `
+                <label class="flex items-start space-x-2 cursor-pointer group select-none">
+                    <input type="checkbox" class="mt-0.5 form-checkbox text-emerald-500 rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-emerald-500 w-4 h-4 flex-none" ${isSelected ? 'checked' : ''} onchange="window.saveReflection('${key}', '${val}')">
+                    <div class="flex-1 min-w-0">
+                        <span class="block text-xs font-bold text-slate-800 dark:text-slate-200 uppercase leading-none mb-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">${title}</span>
+                        <span class="block text-[11px] text-slate-500 dark:text-slate-400 leading-tight">${desc}</span>
+                    </div>
                 </label>`;
             };
 
-            return `<div class="space-y-3 fade-in pt-2 pb-24 relative">
-                    ${getReviewStamp()}
-                    <div class="text-center">
-                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Event Reflection</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Wrap up your experience.</p>
-                    </div>
-
-                    ${feedbackHTML}
-
-                    <!-- Q1 -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+            // --- Slide Content Definitions ---
+            const slides = [
+                // Slide 0: Q1 Takeaway
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getStamp('reflection')}
                         ${getTeacherStamp('q1')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">1. Biggest takeaway?</h3>
-                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-16 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="I learned that...">${r.q1 || ''}</textarea>
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400"><i class="fas fa-lightbulb text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Biggest Takeaway</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 1</p>
+                            </div>
+                        </div>
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3">What is the most important thing you learned today? Be specific!</p>
+                        <textarea oninput="window.saveReflection('q1', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 resize-none" placeholder="I learned that...">${r.q1 || ''}</textarea>
                     </div>
+                </div>`,
 
-                    <!-- Q2 Careers -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 1: Q2 Careers
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q2')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">2. Career paths explored?</h3>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${checkBox('q2', 'Engineering', 'Engineering')}
-                            ${checkBox('q2', 'Health / Biomedical', 'Health')}
-                            ${checkBox('q2', 'Business', 'Business')}
-                            ${checkBox('q2', 'Media', 'Media')}
-                            ${checkBox('q2', 'Tech / Cyber', 'Tech')}
-                            ${checkBox('q2', 'Trades', 'Trades')}
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400"><i class="fas fa-briefcase text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Career Paths</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 2 • Select all that apply</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 flex-1 overflow-y-auto pr-1 pb-1">
+                            ${choiceCard('q2', 'Engineering', 'Engineering', 'fa-cogs')}
+                            ${choiceCard('q2', 'Health / Biomedical', 'Biomedical', 'fa-heartbeat')}
+                            ${choiceCard('q2', 'Business', 'Business', 'fa-chart-line')}
+                            ${choiceCard('q2', 'Media', 'Media', 'fa-video')}
+                            ${choiceCard('q2', 'Tech / Cyber', 'Cybersecurity', 'fa-laptop-code')}
+                            ${choiceCard('q2', 'Trades', 'Skilled Trades', 'fa-tools')}
                         </div>
                     </div>
+                </div>`,
 
-                    <!-- Q3 Skills -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 2: Q3 Skills (Updated 2x2 Grid with Checkboxes)
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q3')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">3. GMCS Skills Used</h3>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mb-2">Check 2-3 skills you used today.</p>
+                        <div class="flex items-center gap-3 mb-3 flex-none">
+                            <div class="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400"><i class="fas fa-tools text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">GMCS Skills</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 3 • Check 2-3 skills used</p>
+                            </div>
+                        </div>
                         
-                        <div class="grid grid-cols-2 gap-2">
-                            <!-- Creative -->
-                            <div class="bg-purple-50 dark:bg-slate-900/30 p-2 rounded border border-purple-200 dark:border-purple-500/20">
-                                <h4 class="text-purple-600 dark:text-purple-400 text-[10px] font-bold uppercase mb-1">Creative & Critical</h4>
-                                <div class="space-y-1">
-                                    ${checkBox('q3', 'Solved Problems', 'Solved Problems').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Shared Work', 'Shared Work').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Persevered', 'Persevered').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                        <div class="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                            <div class="grid grid-cols-2 gap-x-4 gap-y-6">
+                                <!-- Creative -->
+                                <div>
+                                    <h4 class="text-purple-600 dark:text-purple-400 text-xs font-bold uppercase mb-2 border-b border-purple-200 dark:border-purple-800/50 pb-1">Creative & Critical</h4>
+                                    <div class="space-y-3">
+                                        ${skillCheckbox('q3', 'Solved Problems', 'SOLVED PROBLEMS', 'Found, understood, or solved a meaningful problem')}
+                                        ${skillCheckbox('q3', 'Shared Work', 'SHARED MY WORK', 'Made my ideas clear to others or used feedback to improve')}
+                                        ${skillCheckbox('q3', 'Persevered', 'PERSEVERED', 'Kept trying, learned from mistakes, tried again')}
+                                    </div>
                                 </div>
-                            </div>
-                            <!-- Responsible -->
-                            <div class="bg-emerald-50 dark:bg-slate-900/30 p-2 rounded border border-emerald-200 dark:border-emerald-500/20">
-                                <h4 class="text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase mb-1">Responsible Individual</h4>
-                                <div class="space-y-1">
-                                    ${checkBox('q3', 'Accountable', 'Accountable').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Prepared', 'Prepared').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Made Plans', 'Made Plans').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                <!-- Responsible -->
+                                <div>
+                                    <h4 class="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-2 border-b border-emerald-200 dark:border-emerald-800/50 pb-1">Responsible</h4>
+                                    <div class="space-y-3">
+                                        ${skillCheckbox('q3', 'Accountable', 'WAS ACCOUNTABLE', 'Kept commitments, made sound decisions, lived values')}
+                                        ${skillCheckbox('q3', 'Prepared', 'WAS PREPARED', 'Read, wrote, took notes, or got ready for activities')}
+                                        ${skillCheckbox('q3', 'Made Plans', 'MADE PLANS', 'Set goals, took on new roles, thought about steps')}
+                                    </div>
                                 </div>
-                            </div>
-                            <!-- Collaborator -->
-                            <div class="bg-blue-50 dark:bg-slate-900/30 p-2 rounded border border-blue-200 dark:border-blue-500/20">
-                                <h4 class="text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase mb-1">Collaborator</h4>
-                                <div class="space-y-1">
-                                    ${checkBox('q3', 'Listened', 'Listened').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Mutual Respect', 'Respect').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Built Team', 'Teamwork').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                <!-- Collaborator -->
+                                <div>
+                                    <h4 class="text-blue-600 dark:text-blue-400 text-xs font-bold uppercase mb-2 border-b border-blue-200 dark:border-blue-800/50 pb-1">Collaborator</h4>
+                                    <div class="space-y-3">
+                                        ${skillCheckbox('q3', 'Listened', 'LISTENED', 'Gave attention to others’ ideas and contributions')}
+                                        ${skillCheckbox('q3', 'Mutual Respect', 'MUTUAL RESPECT', 'Acknowledged others’ experiences and perspectives')}
+                                        ${skillCheckbox('q3', 'Built Team', 'BUILT MY TEAM', 'Encouraged others, helped create trust and belonging')}
+                                    </div>
                                 </div>
-                            </div>
-                            <!-- Learner -->
-                            <div class="bg-amber-50 dark:bg-slate-900/30 p-2 rounded border border-amber-200 dark:border-amber-500/20">
-                                <h4 class="text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase mb-1">Lifelong Learner</h4>
-                                <div class="space-y-1">
-                                    ${checkBox('q3', 'Authentic', 'Authentic').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Reflective', 'Reflective').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
-                                    ${checkBox('q3', 'Used Technology', 'Used Tech').replace('p-2', 'p-1').replace('text-xs', 'text-[10px]')}
+                                <!-- Learner -->
+                                <div>
+                                    <h4 class="text-amber-600 dark:text-amber-400 text-xs font-bold uppercase mb-2 border-b border-amber-200 dark:border-amber-800/50 pb-1">Lifelong Learner</h4>
+                                    <div class="space-y-3">
+                                        ${skillCheckbox('q3', 'Authentic', 'WAS AUTHENTIC', 'Explored my interests, identity, and community role')}
+                                        ${skillCheckbox('q3', 'Reflective', 'WAS REFLECTIVE', 'Asked questions, clarified ideas, improved over time')}
+                                        ${skillCheckbox('q3', 'Used Technology', 'USED TECHNOLOGY', 'Created artifacts, connected with experts, shared work')}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                </div>`,
 
-                    <!-- Q4 Surprise -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 3: Q4 Surprise
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q4')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">4. What surprised you?</h3>
-                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-400 dark:placeholder-slate-600" placeholder="One short sentence...">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400"><i class="fas fa-bolt text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Surprise!</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 4</p>
+                            </div>
+                        </div>
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-6">What is one thing that surprised you the most today?</p>
+                        <div class="relative">
+                            <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 pl-12 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500" placeholder="I was surprised that...">
+                            <i class="fas fa-pen absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 text-lg"></i>
+                        </div>
                     </div>
+                </div>`,
 
-                    <!-- Q5 Goals -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 4: Q5 Goals
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q5')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">5. Impact on career goals?</h3>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${radioBox('q5', 'More Interested', 'More Interested')}
-                            ${radioBox('q5', 'Learned New', 'Learned New')}
-                            ${radioBox('q5', 'Still Exploring', 'Still Exploring')}
-                            ${radioBox('q5', 'Not For Me', 'Not For Me')}
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400"><i class="fas fa-road text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Career Impact</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 5 • Select one</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 gap-3 flex-1">
+                            ${choiceCard('q5', 'More Interested', 'I am MORE interested in this field.', 'fa-arrow-up')}
+                            ${choiceCard('q5', 'Learned New', 'I learned something NEW about jobs.', 'fa-lightbulb')}
+                            ${choiceCard('q5', 'Still Exploring', 'I am still exploring my options.', 'fa-search')}
+                            ${choiceCard('q5', 'Not For Me', 'This career path may not be for me.', 'fa-ban')}
                         </div>
                     </div>
+                </div>`,
 
-                    <!-- Q6 Next -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 5: Q6 Next
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q6')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-1">6. What do you want to learn next?</h3>
-                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-12 placeholder-slate-400 dark:placeholder-slate-600 resize-none" placeholder="I want to look up...">${r.q6 || ''}</textarea>
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400"><i class="fas fa-graduation-cap text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">What's Next?</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 6</p>
+                            </div>
+                        </div>
+                        <p class="text-base text-slate-600 dark:text-slate-300 mb-3">What topic or skill do you want to learn more about?</p>
+                        <textarea oninput="window.saveReflection('q6', this.value)" class="flex-1 w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-xl p-4 text-base text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 resize-none" placeholder="I want to look up...">${r.q6 || ''}</textarea>
                     </div>
+                </div>`,
 
-                    <!-- Q7 Rating -->
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                // Slide 6: Q7 Rating
+                `<div class="h-full flex flex-col slide-in-right">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-200 dark:border-slate-700 shadow-sm relative flex flex-col">
                         ${getTeacherStamp('q7')}
-                        <h3 class="text-slate-900 dark:text-white font-bold text-sm mb-2">7. Rate experience</h3>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${radioBox('q7', 'Excellent', 'Excellent 🤩')}
-                            ${radioBox('q7', 'Good', 'Good 🙂')}
-                            ${radioBox('q7', 'Okay', 'Okay 😐')}
-                            ${radioBox('q7', 'Needs Improvement', 'Needs Work 😕')}
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400"><i class="fas fa-star text-2xl"></i></div>
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold text-xl leading-none">Final Rating</h3>
+                                <p class="text-xs text-slate-500 uppercase tracking-wider font-bold mt-1">Question 7 • How was it?</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 flex-1">
+                            ${choiceCard('q7', 'Excellent', 'Excellent', 'fa-grin-stars')}
+                            ${choiceCard('q7', 'Good', 'Good', 'fa-smile')}
+                            ${choiceCard('q7', 'Okay', 'Okay', 'fa-meh')}
+                            ${choiceCard('q7', 'Needs Improvement', 'Needs Work', 'fa-frown')}
+                        </div>
+                    </div>
+                </div>`
+            ];
+
+            // Render current slide
+            const currentContent = slides[currentReflectionSlide];
+            const isFirst = currentReflectionSlide === 0;
+            const isLast = currentReflectionSlide === slides.length - 1;
+            const progress = ((currentReflectionSlide + 1) / slides.length) * 100;
+
+            return `<br>
+                <div class="h-full flex flex-col pt-2 pb-24 relative fade-in">
+                    <!-- Header Row with Buttons -->
+                    <div class="flex justify-between items-center mb-4 px-1">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Reflection</h2>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Step ${currentReflectionSlide + 1} of ${slides.length}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="window.manualSave()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-md flex items-center"><i class="fas fa-save mr-1"></i> Save</button>
+                            <button onclick="window.copyAllNotes()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-md flex items-center"><i class="fas fa-copy mr-1"></i> Copy All</button>
                         </div>
                     </div>
 
-                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1">
-                        <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button>
-                        <button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button>
+                    ${tComment ? `
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-3 rounded-xl mb-4 relative overflow-hidden flex-none">
+                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-4xl text-amber-500"></i></div>
+                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-xs uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Feedback</h4>
+                        <p class="text-slate-700 dark:text-slate-200 text-xs leading-relaxed">${tComment}</p>
+                    </div>` : ''}
+
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-gray-200 dark:bg-slate-700 h-1.5 rounded-full mb-4 overflow-hidden">
+                        <div class="bg-blue-500 h-full transition-all duration-300" style="width: ${progress}%"></div>
+                    </div>
+
+                    <!-- Slide Content Area -->
+                    <div class="flex-1 overflow-hidden relative">
+                        ${currentContent}
+                    </div>
+
+                    <!-- Navigation Footer -->
+                    <div class="mt-4 flex justify-between items-center px-1">
+                        <button onclick="window.prevReflectionSlide()" class="px-4 py-2 rounded-lg bg-gray-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors border border-gray-200 dark:border-slate-700 ${isFirst ? 'opacity-0 pointer-events-none' : ''}">
+                            <i class="fas fa-arrow-left mr-1"></i> Back
+                        </button>
+                        
+                        <button onclick="window.nextReflectionSlide()" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm hover:bg-blue-500 transition-colors shadow-lg ${isLast ? 'opacity-50 pointer-events-none' : ''}">
+                            Next <i class="fas fa-arrow-right ml-1"></i>
+                        </button>
                     </div>
                 </div>
             `;
