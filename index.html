@@ -1,12 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPH TechCon V4</title>
+    <title>NPH TechCon V5</title>
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%233b82f6%22/><text x=%2250%22 y=%2265%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22>NPH</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
@@ -18,52 +28,64 @@
         }
 
         /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
 
         .neon-text { text-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
-        .neon-border { box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
-        .tab-active { color: #60a5fa; border-bottom: 2px solid #60a5fa; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .stamp-animation { animation: stampIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes stampIn { 
+            0% { opacity: 0; transform: scale(2) rotate(-10deg); } 
+            100% { opacity: 1; transform: scale(1) rotate(-10deg); } 
+        }
+
         .login-bg { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
-        .teacher-bg { background: radial-gradient(circle at center, #371b04 0%, #0f172a 100%); }
+        html:not(.dark) .login-bg { background: radial-gradient(circle at center, #f1f5f9 0%, #cbd5e1 100%); }
+        
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body class="flex flex-col h-screen overflow-hidden">
+<body class="flex flex-col h-screen overflow-hidden bg-gray-50 dark:bg-slate-900 text-slate-900 dark:text-slate-200 transition-colors duration-300">
 
     <!-- Header -->
-    <header id="app-header" class="bg-slate-900 border-b border-slate-800 p-4 shadow-lg z-20 hidden">
+    <header id="app-header" class="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 p-4 shadow-sm dark:shadow-lg z-20 hidden transition-colors duration-300">
         <div class="flex justify-between items-center max-w-4xl mx-auto w-full">
             <div>
-                <h1 class="text-xl font-bold text-white tracking-wide">NPH <span id="header-highlight" class="text-blue-500">TechCon</span></h1>
-                <p id="header-subtitle" class="text-xs text-slate-400">Student: ...</p>
+                <h1 class="text-xl font-bold text-slate-900 dark:text-white tracking-wide">NPH <span id="header-highlight" class="text-blue-600 dark:text-blue-500">TechCon</span></h1>
+                <p id="header-subtitle" class="text-xs text-slate-500 dark:text-slate-400">Student: ...</p>
             </div>
             <div class="text-right flex items-center gap-2">
+                <!-- Theme Toggle -->
+                <button onclick="window.toggleTheme()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white p-2 rounded-full transition-colors">
+                    <i class="fas fa-sun block dark:hidden"></i>
+                    <i class="fas fa-moon hidden dark:block"></i>
+                </button>
+
                 <!-- Teacher Actions -->
                 <div id="teacher-actions" class="hidden flex items-center gap-2 mr-2">
-                    <button onclick="window.renderView('teacher-dashboard')" id="btn-dash" class="text-slate-400 hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors border border-transparent hover:border-slate-600">
+                    <button onclick="window.renderView('teacher-dashboard')" id="btn-dash" class="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors">
                         <i class="fas fa-list mr-1"></i> Data
                     </button>
-                    <button onclick="window.renderView('teacher-presentation')" id="btn-slides" class="text-slate-400 hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors border border-transparent hover:border-slate-600">
+                    <button onclick="window.renderView('teacher-presentation')" id="btn-slides" class="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white px-2 py-1 rounded text-xs font-bold transition-colors">
                         <i class="fas fa-chalkboard mr-1"></i> Slides
                     </button>
-                    <div class="h-4 w-px bg-slate-700 mx-1"></div>
+                    <div class="h-4 w-px bg-gray-300 dark:bg-slate-700 mx-1"></div>
                     <button onclick="window.exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">
                         <i class="fas fa-file-csv mr-1"></i> Export
                     </button>
-                    <button onclick="window.refreshTeacherData()" class="text-slate-400 hover:text-white px-2">
+                    <button onclick="window.refreshTeacherData()" class="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white px-2">
                         <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
 
                 <!-- Sync Status Indicator -->
-                <div id="sync-status" class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded border border-slate-700 transition-colors">
+                <div id="sync-status" class="text-xs font-mono text-slate-500 dark:text-slate-500 bg-gray-100 dark:bg-slate-800 px-2 py-1 rounded border border-gray-200 dark:border-slate-700 transition-colors">
                     <i class="fas fa-circle-notch fa-spin mr-1"></i> CONNECTING
                 </div>
-                <button onclick="window.logout()" class="text-slate-500 hover:text-red-400 ml-2" aria-label="Logout">
+                <button onclick="window.logout()" class="text-slate-400 hover:text-red-500 ml-1 px-2" aria-label="Logout">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
             </div>
@@ -82,21 +104,21 @@
     </main>
 
     <!-- Bottom Navigation (Student Only) -->
-    <nav id="app-nav" class="bg-slate-900/95 backdrop-blur border-t border-slate-800 fixed bottom-0 w-full z-30 pb-safe hidden">
+    <nav id="app-nav" class="bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-gray-200 dark:border-slate-800 fixed bottom-0 w-full z-30 pb-safe hidden transition-colors duration-300">
         <div class="flex justify-around items-center h-16 max-w-4xl mx-auto">
-            <button onclick="window.renderView('home')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-home">
+            <button onclick="window.renderView('home')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-500 transition-colors" id="nav-home">
                 <i class="fas fa-home text-lg mb-1"></i><span class="text-[10px] font-medium">Home</span>
             </button>
-            <button onclick="window.renderView('prep')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-prep">
+            <button onclick="window.renderView('prep')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-500 transition-colors" id="nav-prep">
                 <i class="fas fa-clipboard-check text-lg mb-1"></i><span class="text-[10px] font-medium">Get Ready</span>
             </button>
-            <button onclick="window.renderView('agenda')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-agenda">
+            <button onclick="window.renderView('agenda')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-500 transition-colors" id="nav-agenda">
                 <i class="fas fa-clock text-lg mb-1"></i><span class="text-[10px] font-medium">Agenda</span>
             </button>
-            <button onclick="window.renderView('passport')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-passport">
+            <button onclick="window.renderView('passport')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-500 transition-colors" id="nav-passport">
                 <i class="fas fa-passport text-lg mb-1"></i><span class="text-[10px] font-medium">Passport</span>
             </button>
-            <button onclick="window.renderView('reflection')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-400 transition-colors" id="nav-reflection">
+            <button onclick="window.renderView('reflection')" class="nav-btn flex flex-col items-center justify-center w-full h-full text-slate-400 hover:text-blue-500 transition-colors" id="nav-reflection">
                 <i class="fas fa-star text-lg mb-1"></i><span class="text-[10px] font-medium">Reflection</span>
             </button>
         </div>
@@ -104,19 +126,19 @@
 
     <!-- Teacher Modal -->
     <div id="modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-slate-900 w-full max-w-2xl rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
-            <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/50 rounded-t-2xl">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh] transition-colors duration-300">
+            <div class="p-6 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 rounded-t-2xl">
                 <div>
-                    <h2 class="text-xl font-bold text-white" id="modal-title">Student Name</h2>
-                    <p class="text-xs text-slate-400" id="modal-id">ID: ...</p>
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-white" id="modal-title">Student Name</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400" id="modal-id">ID: ...</p>
                 </div>
-                <button onclick="window.closeModal()" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-8 h-8 rounded-full transition-colors">
+                <button onclick="window.closeModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white bg-transparent hover:bg-gray-100 dark:hover:bg-slate-700 w-8 h-8 rounded-full transition-colors">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="p-6 overflow-y-auto space-y-6" id="modal-content"></div>
-            <div class="p-4 border-t border-slate-700 bg-slate-800/30 rounded-b-2xl flex justify-end">
-                <button onclick="window.closeModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Close</button>
+            <div class="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/30 rounded-b-2xl flex justify-end">
+                <button onclick="window.closeModal()" class="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white px-4 py-2 rounded-lg text-sm font-bold">Close</button>
             </div>
         </div>
     </div>
@@ -156,15 +178,21 @@
             notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' },
             checklist: { charged: false, pack: false, login: false, cisco: false },
             reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' },
-            teacherComment: ''
+            teacherComment: '',
+            teacherReviews: {} // Stores review status for individual items { 'iot': true, 'q1': false }
         };
 
-        let teacherData = []; // Stores all student profiles
+        let teacherData = []; 
         let saveTimeout = null;
         let unsubscribeSnapshot = null;
 
         // --- INIT ---
         const initApp = () => {
+            // Restore theme
+            if (localStorage.getItem('theme') === 'light') {
+                document.documentElement.classList.remove('dark');
+            }
+
             const savedEmail = localStorage.getItem('nph_student_email');
             const savedName = localStorage.getItem('nph_student_name');
             
@@ -175,6 +203,18 @@
                 window.renderView('home');
             } else {
                 window.renderView('login');
+            }
+        };
+
+        // --- THEME ---
+        window.toggleTheme = () => {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
             }
         };
 
@@ -196,13 +236,13 @@
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const fetchedData = docSnap.data();
-                    // Merge deeply to avoid overwriting nested objects like reflection
                     appData = {
                         ...appData,
                         ...fetchedData,
                         reflection: { ...appData.reflection, ...(fetchedData.reflection || {}) },
                         notes: { ...appData.notes, ...(fetchedData.notes || {}) },
-                        checklist: { ...appData.checklist, ...(fetchedData.checklist || {}) }
+                        checklist: { ...appData.checklist, ...(fetchedData.checklist || {}) },
+                        teacherReviews: { ...appData.teacherReviews, ...(fetchedData.teacherReviews || {}) }
                     };
                     updateHeader();
                     if (currentView !== 'login' && userMode === 'student') window.renderView(currentView);
@@ -261,9 +301,8 @@
                     teacherData.push({ id: doc.id, ...doc.data() });
                 });
                 
-                // Refresh view if active
                 if(currentView === 'teacher-dashboard') renderTeacherTable(teacherData);
-                if(currentView === 'teacher-presentation') window.renderView('teacher-presentation'); // re-render slides to get new Qs
+                if(currentView === 'teacher-presentation') window.renderView('teacher-presentation'); 
                 
                 updateSyncStatus('online');
             } catch (e) {
@@ -273,20 +312,17 @@
         };
 
         window.deleteStudent = async (id) => {
-            if(!confirm("Are you sure you want to PERMANENTLY delete this student's data? This cannot be undone.")) return;
-            
+            if(!confirm("Are you sure? This cannot be undone.")) return;
             try {
                 updateSyncStatus('syncing');
                 await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', id));
-                // Update local data immediately
                 teacherData = teacherData.filter(s => s.id !== id);
                 renderTeacherTable(teacherData);
                 updateSyncStatus('online');
-                showToast("Student deleted.");
+                showToast("Deleted.");
             } catch (e) {
-                console.error("Delete failed", e);
                 updateSyncStatus('offline');
-                alert("Failed to delete. Please check connection.");
+                alert("Failed to delete.");
             }
         };
 
@@ -296,16 +332,57 @@
                 updateSyncStatus('syncing');
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
                 await setDoc(docRef, { teacherComment: comment }, { merge: true });
-                
-                // Update local data
                 const s = teacherData.find(s => s.id === studentId);
                 if (s) s.teacherComment = comment;
-                
                 showToast("Feedback Saved!");
                 updateSyncStatus('online');
             } catch (e) {
-                console.error("Comment save failed", e);
                 alert("Failed to save feedback.");
+            }
+        };
+
+        window.toggleItemReview = async (studentId, key, isChecked) => {
+            try {
+                updateSyncStatus('syncing');
+                // Optimistic Update
+                const s = teacherData.find(s => s.id === studentId);
+                if(s) {
+                    if(!s.teacherReviews) s.teacherReviews = {};
+                    s.teacherReviews[key] = isChecked;
+                }
+
+                // Firestore Update
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'student_profiles', studentId);
+                const updatePayload = {};
+                updatePayload[`teacherReviews.${key}`] = isChecked;
+                
+                await setDoc(docRef, updatePayload, { merge: true });
+                updateSyncStatus('online');
+            } catch(e) {
+                console.error("Toggle review failed", e);
+                updateSyncStatus('offline');
+            }
+        }
+
+        window.switchModalTab = (tabName) => {
+            // Hide all tabs
+            ['overview', 'passport', 'reflection'].forEach(t => {
+                const el = document.getElementById(`modal-tab-${t}`);
+                const btn = document.getElementById(`btn-modal-${t}`);
+                if (el) el.classList.add('hidden');
+                if (btn) {
+                    btn.classList.remove('text-blue-600', 'dark:text-blue-400', 'border-b-2', 'border-blue-600', 'dark:border-blue-400');
+                    btn.classList.add('text-slate-500', 'dark:text-slate-400');
+                }
+            });
+            
+            // Show selected
+            const targetEl = document.getElementById(`modal-tab-${tabName}`);
+            const targetBtn = document.getElementById(`btn-modal-${tabName}`);
+            if (targetEl) targetEl.classList.remove('hidden');
+            if (targetBtn) {
+                targetBtn.classList.remove('text-slate-500', 'dark:text-slate-400');
+                targetBtn.classList.add('text-blue-600', 'dark:text-blue-400', 'border-b-2', 'border-blue-600', 'dark:border-blue-400');
             }
         };
 
@@ -315,7 +392,7 @@
             const title = document.getElementById('header-highlight');
             
             if (userMode === 'student') {
-                title.className = "text-blue-500";
+                title.className = "text-blue-600 dark:text-blue-500";
                 title.innerText = "TechCon";
                 subtitle.innerText = `Student: ${appData.studentName || 'Guest'}`;
                 document.getElementById('teacher-actions').classList.add('hidden');
@@ -325,20 +402,19 @@
                 subtitle.innerText = "Monitor Dashboard";
                 document.getElementById('teacher-actions').classList.remove('hidden');
                 
-                // Update active state for teacher nav
                 const btnDash = document.getElementById('btn-dash');
                 const btnSlides = document.getElementById('btn-slides');
                 
                 if(currentView === 'teacher-dashboard' && btnDash) {
-                    btnDash.classList.add('bg-slate-700', 'text-white');
-                    btnDash.classList.remove('text-slate-400');
-                    btnSlides.classList.remove('bg-slate-700', 'text-white');
-                    btnSlides.classList.add('text-slate-400');
+                    btnDash.classList.add('bg-slate-200', 'dark:bg-slate-700', 'text-blue-600', 'dark:text-white');
+                    btnDash.classList.remove('text-slate-500', 'dark:text-slate-400');
+                    btnSlides.classList.remove('bg-slate-200', 'dark:bg-slate-700', 'text-blue-600', 'dark:text-white');
+                    btnSlides.classList.add('text-slate-500', 'dark:text-slate-400');
                 } else if (currentView === 'teacher-presentation' && btnSlides) {
-                    btnSlides.classList.add('bg-slate-700', 'text-white');
-                    btnSlides.classList.remove('text-slate-400');
-                    btnDash.classList.remove('bg-slate-700', 'text-white');
-                    btnDash.classList.add('text-slate-400');
+                    btnSlides.classList.add('bg-slate-200', 'dark:bg-slate-700', 'text-blue-600', 'dark:text-white');
+                    btnSlides.classList.remove('text-slate-500', 'dark:text-slate-400');
+                    btnDash.classList.remove('bg-slate-200', 'dark:bg-slate-700', 'text-blue-600', 'dark:text-white');
+                    btnDash.classList.add('text-slate-500', 'dark:text-slate-400');
                 }
             }
         }
@@ -348,17 +424,17 @@
             if (!el) return;
             
             if (status === 'online') {
-                el.innerHTML = '<i class="fas fa-cloud text-emerald-400 mr-1"></i> SYNCED';
-                el.className = "text-xs font-mono text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded border border-emerald-400/20 transition-colors";
+                el.innerHTML = '<i class="fas fa-cloud text-emerald-500 dark:text-emerald-400 mr-1"></i> SYNCED';
+                el.className = "text-xs font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-400/10 px-2 py-1 rounded border border-emerald-100 dark:border-emerald-400/20 transition-colors";
             } else if (status === 'syncing') {
-                el.innerHTML = '<i class="fas fa-sync fa-spin text-blue-400 mr-1"></i> SAVING';
-                el.className = "text-xs font-mono text-blue-400 bg-blue-400/10 px-2 py-1 rounded border border-blue-400/20 transition-colors";
+                el.innerHTML = '<i class="fas fa-sync fa-spin text-blue-500 dark:text-blue-400 mr-1"></i> SAVING';
+                el.className = "text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-400/10 px-2 py-1 rounded border border-blue-100 dark:border-blue-400/20 transition-colors";
             } else if (status === 'guest') {
-                el.innerHTML = '<i class="fas fa-hdd text-amber-400 mr-1"></i> LOCAL';
-                el.className = "text-xs font-mono text-amber-400 bg-amber-400/10 px-2 py-1 rounded border border-amber-400/20 transition-colors";
+                el.innerHTML = '<i class="fas fa-hdd text-amber-500 dark:text-amber-400 mr-1"></i> LOCAL';
+                el.className = "text-xs font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-400/10 px-2 py-1 rounded border border-amber-100 dark:border-amber-400/20 transition-colors";
             } else {
-                el.innerHTML = '<i class="fas fa-wifi-slash text-red-400 mr-1"></i> OFFLINE';
-                el.className = "text-xs font-mono text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20 transition-colors";
+                el.innerHTML = '<i class="fas fa-wifi-slash text-red-500 dark:text-red-400 mr-1"></i> OFFLINE';
+                el.className = "text-xs font-mono text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-400/10 px-2 py-1 rounded border border-red-100 dark:border-red-400/20 transition-colors";
             }
         };
 
@@ -370,26 +446,24 @@
             
             updateHeader();
 
-            // Toggle Navigation Visibility
             if (viewName === 'login' || viewName === 'teacher-login') {
                 header.classList.add('hidden');
                 nav.classList.add('hidden');
             } else {
                 header.classList.remove('hidden');
                 if (userMode === 'student') nav.classList.remove('hidden');
-                else nav.classList.add('hidden'); // No bottom nav for teachers
+                else nav.classList.add('hidden');
             }
 
-            // Student Nav State
             if (userMode === 'student') {
                 document.querySelectorAll('.nav-btn').forEach(btn => {
-                    btn.classList.remove('text-blue-400');
+                    btn.classList.remove('text-blue-600', 'dark:text-blue-400');
                     btn.classList.add('text-slate-400');
                 });
                 const activeBtn = document.getElementById(`nav-${viewName}`);
                 if(activeBtn) {
                     activeBtn.classList.remove('text-slate-400');
-                    activeBtn.classList.add('text-blue-400');
+                    activeBtn.classList.add('text-blue-600', 'dark:text-blue-400');
                 }
             }
 
@@ -404,7 +478,6 @@
             else if (viewName === 'passport') container.innerHTML = getPassportView();
             else if (viewName === 'reflection') container.innerHTML = getReflectionView();
             
-            // Post-render actions
             if (viewName === 'teacher-dashboard') renderTeacherTable(teacherData);
         };
 
@@ -412,7 +485,6 @@
         window.login = async () => {
             const name = document.getElementById('student-name-input').value.trim();
             const email = document.getElementById('student-email-input').value.trim().toLowerCase();
-            
             if (name.length === 0 || email.length === 0) { alert("Please enter both Name and Email."); return; }
 
             localStorage.setItem('nph_student_email', email);
@@ -442,8 +514,7 @@
             isGuestMode = false;
             userMode = 'student';
             if (unsubscribeSnapshot) unsubscribeSnapshot();
-            // Reset Data
-            appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false }, reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' }, teacherComment: '' };
+            appData = { studentName: '', notes: { iot: '', sec: '', ai: '', panel: '', custom_q: '' }, checklist: { charged: false, pack: false, login: false, cisco: false }, reflection: { q1: '', q2: [], q3: [], q4: '', q5: '', q6: '', q7: '' }, teacherComment: '', teacherReviews: {} };
             window.renderView('login');
         };
 
@@ -452,21 +523,15 @@
             appData.notes[key] = value; 
             updateSyncStatus('syncing'); 
             clearTimeout(saveTimeout); 
-            // Autosave set to 60 minutes
             saveTimeout = setTimeout(saveToCloud, 3600000); 
         };
 
         window.saveReflection = (key, value) => {
             if(Array.isArray(appData.reflection[key])) {
-                // Handle Checkbox Arrays
                 const index = appData.reflection[key].indexOf(value);
-                if (index > -1) {
-                    appData.reflection[key].splice(index, 1);
-                } else {
-                    appData.reflection[key].push(value);
-                }
+                if (index > -1) appData.reflection[key].splice(index, 1);
+                else appData.reflection[key].push(value);
             } else {
-                // Handle Text/Radio
                 appData.reflection[key] = value;
             }
             updateSyncStatus('syncing');
@@ -475,9 +540,58 @@
         }
 
         window.manualSave = () => {
-            clearTimeout(saveTimeout); // Clear any pending autosave
+            clearTimeout(saveTimeout); 
             saveToCloud().then(() => showToast("Saved to Cloud!"));
         };
+
+        // --- GAMIFICATION HELPERS ---
+        function calculateStamps() {
+            let collected = 0;
+            if(appData.notes && appData.notes.iot && appData.notes.iot.length > 10) collected++;
+            if(appData.notes && appData.notes.sec && appData.notes.sec.length > 10) collected++;
+            if(appData.notes && appData.notes.ai && appData.notes.ai.length > 10) collected++;
+            if(appData.notes && appData.notes.panel && appData.notes.panel.length > 10) collected++;
+            if(appData.reflection && appData.reflection.q1 && appData.reflection.q1.length > 10) collected++;
+            return collected;
+        }
+
+        function getStamp(sectionKey) {
+            let hasStamp = false;
+            if(sectionKey === 'reflection') hasStamp = (appData.reflection && appData.reflection.q1 && appData.reflection.q1.length > 10);
+            else hasStamp = (appData.notes && appData.notes[sectionKey] && appData.notes[sectionKey].length > 10);
+
+            if(hasStamp) {
+                return `<div class="absolute top-2 right-2 text-red-600/20 dark:text-red-500/30 transform rotate-12 border-2 border-red-600/20 dark:border-red-500/30 rounded px-2 py-1 font-black text-xs uppercase tracking-widest stamp-animation pointer-events-none select-none">Verified</div>`;
+            }
+            return '';
+        }
+
+        function getTeacherStamp(key) {
+            if (appData.teacherReviews && appData.teacherReviews[key]) {
+                return `
+                <div class="absolute -top-3 -right-3 z-10 pointer-events-none select-none stamp-animation">
+                    <div class="flex flex-col items-center justify-center transform rotate-12 border-2 border-emerald-500 bg-emerald-900/80 text-emerald-400 rounded-full w-12 h-12 shadow-lg backdrop-blur-sm">
+                        <i class="fas fa-thumbs-up text-lg"></i>
+                    </div>
+                </div>`;
+            }
+            return '';
+        }
+
+        function getReviewStamp() {
+            // Simplified global review logic if needed, or remove if unused. 
+            // Currently using granular stamps, but kept this for 'overall' review if implemented.
+             if (Object.values(appData.teacherReviews || {}).some(v => v === true)) {
+                 return `
+                <div class="absolute top-4 right-4 z-10 pointer-events-none select-none stamp-animation">
+                    <div class="flex flex-col items-center justify-center transform rotate-12 border-4 border-emerald-500/50 text-emerald-500/50 rounded-full w-24 h-24 bg-transparent backdrop-blur-[1px]">
+                        <i class="fas fa-thumbs-up text-3xl mb-1"></i>
+                        <span class="text-[10px] font-black uppercase tracking-widest text-center leading-none">Teacher<br>Reviewed</span>
+                    </div>
+                </div>`;
+             }
+            return '';
+        }
 
         // --- TEACHER HELPERS ---
         function updateTeacherCharts(data) {
@@ -486,18 +600,13 @@
 
             data.forEach(s => {
                 const r = s.reflection?.q7;
-                if (r) {
-                    if (counts[r] !== undefined) {
-                        counts[r]++;
-                        totalRated++;
-                    }
+                if (r && counts[r] !== undefined) {
+                    counts[r]++;
+                    totalRated++;
                 }
             });
 
-            // Avoid divide by zero
             const base = totalRated === 0 ? 1 : totalRated;
-
-            // Update DOM
             const setBar = (idSuffix, count) => {
                 const percent = (count / base) * 100;
                 const elBar = document.getElementById(`bar-${idSuffix}`);
@@ -515,15 +624,12 @@
         function renderTeacherTable(data) {
             const tbody = document.getElementById('teacher-table-body');
             
-            // Update Stats & Charts
             if(document.getElementById('stat-count')) {
                 document.getElementById('stat-count').innerText = data.length;
                 document.getElementById('stat-active').innerText = data.filter(s => {
                     const r = s.reflection || {};
                     return (r.q1 && r.q1.length > 0);
                 }).length;
-                
-                // Update the Satisfaction Graph
                 updateTeacherCharts(data);
             }
 
@@ -539,15 +645,15 @@
                 const notes = student.notes || {};
                 const list = student.checklist || {};
                 const r = student.reflection || {};
-                const has = (txt) => txt && txt.length > 2 ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-600">-</span>';
-                const hasReflect = (r.q1 && r.q1.length > 0) ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-600">-</span>';
+                const has = (txt) => txt && txt.length > 2 ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-300 dark:text-slate-600">-</span>';
+                const hasReflect = (r.q1 && r.q1.length > 0) ? '<i class="fas fa-check text-emerald-500"></i>' : '<span class="text-slate-300 dark:text-slate-600">-</span>';
                 
-                const checkIcon = (val, icon) => `<i class="fas ${icon} ${val ? 'text-emerald-400' : 'text-slate-700'} text-xs"></i>`;
+                const checkIcon = (val, icon) => `<i class="fas ${icon} ${val ? 'text-emerald-400' : 'text-slate-300 dark:text-slate-700'} text-xs"></i>`;
 
                 const tr = document.createElement('tr');
-                tr.className = "hover:bg-slate-700/50 transition-colors border-b border-slate-700/50 last:border-0";
+                tr.className = "hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors border-b border-gray-200 dark:border-slate-700/50 last:border-0";
                 tr.innerHTML = `
-                    <td class="p-3 font-medium text-white">
+                    <td class="p-3 font-medium text-slate-900 dark:text-white">
                         <div>${student.studentName || 'Unknown'}</div>
                         <div class="text-xs text-slate-500 font-mono truncate max-w-[150px]">${student.id}</div>
                     </td>
@@ -563,7 +669,7 @@
                     <td class="p-3 text-center">${hasReflect}</td>
                     <td class="p-3 text-right flex items-center justify-end gap-2">
                         <button onclick="window.viewStudent('${student.id}')" class="text-amber-500 hover:text-white hover:bg-amber-600 px-2 py-1 rounded text-xs font-bold uppercase">View</button>
-                        <button onclick="window.deleteStudent('${student.id}')" class="text-slate-500 hover:text-white hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition-colors" title="Delete Student"><i class="fas fa-trash"></i></button>
+                        <button onclick="window.deleteStudent('${student.id}')" class="text-slate-400 hover:text-white hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition-colors"><i class="fas fa-trash"></i></button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -579,51 +685,78 @@
             const l = student.checklist || {};
             const r = student.reflection || {};
             const tComment = student.teacherComment || '';
+            const tReviews = student.teacherReviews || {};
             const content = document.getElementById('modal-content');
             
-            const renderBlock = (title, text, color) => `
-                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <h4 class="text-${color}-400 font-bold mb-2 text-sm uppercase">${title}</h4>
-                    <p class="text-slate-200 text-sm whitespace-pre-wrap">${text && text.length > 0 ? text : '<span class="text-slate-600 italic">Empty</span>'}</p>
+            const renderReviewableBlock = (key, title, text, color) => {
+                const isChecked = tReviews[key] ? 'checked' : '';
+                return `
+                <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-${color}-600 dark:text-${color}-400 font-bold text-sm uppercase">${title}</h4>
+                        <label class="flex items-center cursor-pointer space-x-2">
+                            <span class="text-[10px] uppercase font-bold text-slate-400 select-none">Reviewed</span>
+                            <input type="checkbox" class="form-checkbox rounded text-emerald-500 bg-slate-700 border-slate-600 focus:ring-0 w-4 h-4 cursor-pointer" ${isChecked} onchange="window.toggleItemReview('${id}', '${key}', this.checked)">
+                        </label>
+                    </div>
+                    <p class="text-slate-700 dark:text-slate-200 text-sm whitespace-pre-wrap">${text && text.length > 0 ? text : '<span class="text-slate-400 dark:text-slate-600 italic">Empty</span>'}</p>
                 </div>`;
+            };
             
             const checkStatus = (val, label) => `
-                <div class="flex items-center gap-2 ${val ? 'text-emerald-400' : 'text-slate-500'}">
+                <div class="flex items-center gap-2 ${val ? 'text-emerald-500 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}">
                     <i class="fas ${val ? 'fa-check-circle' : 'fa-times-circle'}"></i>
                     <span class="text-sm">${label}</span>
                 </div>`;
 
+            // TABBED CONTENT CONSTRUCTION
             content.innerHTML = `
-                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
-                    <h4 class="text-white font-bold mb-3 text-sm uppercase">Teacher Feedback</h4>
-                    <textarea id="teacher-comment-input" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:outline-none focus:border-amber-500 h-24" placeholder="Write feedback here...">${tComment}</textarea>
-                    <button onclick="window.saveTeacherComment('${id}')" class="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">Save Feedback</button>
+                <!-- Tabs -->
+                <div class="flex border-b border-gray-200 dark:border-slate-700 mb-6">
+                    <button id="btn-modal-overview" onclick="window.switchModalTab('overview')" class="flex-1 pb-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 transition-colors">Overview</button>
+                    <button id="btn-modal-passport" onclick="window.switchModalTab('passport')" class="flex-1 pb-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Passport</button>
+                    <button id="btn-modal-reflection" onclick="window.switchModalTab('reflection')" class="flex-1 pb-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Reflection</button>
                 </div>
 
-                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
-                    <h4 class="text-white font-bold mb-3 text-sm uppercase">Readiness Checklist</h4>
-                    <div class="grid grid-cols-2 gap-2">
-                        ${checkStatus(l.charged, 'Charged')}
-                        ${checkStatus(l.pack, 'Packed')}
-                        ${checkStatus(l.login, 'Login Verified')}
-                        ${checkStatus(l.cisco, 'Cisco Installed')}
+                <!-- Overview Tab -->
+                <div id="modal-tab-overview" class="space-y-4">
+                    
+                    <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                        <h4 class="text-slate-900 dark:text-white font-bold mb-3 text-sm uppercase">Teacher Feedback</h4>
+                        <textarea id="teacher-comment-input" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-amber-500 h-24" placeholder="Write feedback here...">${tComment}</textarea>
+                        <button onclick="window.saveTeacherComment('${id}')" class="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors">Save Feedback</button>
+                    </div>
+
+                    <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                        <h4 class="text-slate-900 dark:text-white font-bold mb-3 text-sm uppercase">Readiness Checklist</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${checkStatus(l.charged, 'Charged')}
+                            ${checkStatus(l.pack, 'Packed')}
+                            ${checkStatus(l.login, 'Login Verified')}
+                            ${checkStatus(l.cisco, 'Cisco Installed')}
+                        </div>
                     </div>
                 </div>
-                ${renderBlock('Reflection: Learned', r.q1, 'blue')}
-                ${renderBlock('Reflection: Careers', (r.q2 || []).join(', '), 'blue')}
-                ${renderBlock('Reflection: GMCS Skills', (r.q3 || []).join(', '), 'blue')}
-                ${renderBlock('Reflection: Surprised', r.q4, 'blue')}
-                ${renderBlock('Reflection: Career Goals', r.q5, 'blue')}
-                ${renderBlock('Reflection: Want to Learn', r.q6, 'blue')}
-                ${renderBlock('Reflection: Rating', r.q7, 'blue')}
-                
-                <hr class="border-slate-700 my-4">
-                
-                ${renderBlock('IoT Innovation', n.iot, 'purple')}
-                ${renderBlock('Secure the Network', n.sec, 'red')}
-                ${renderBlock('AI for Good', n.ai, 'blue')}
-                ${renderBlock('Professional Panel', n.panel, 'emerald')}
-                ${renderBlock('Custom Questions', n.custom_q, 'amber')}
+
+                <!-- Passport Tab -->
+                <div id="modal-tab-passport" class="space-y-4 hidden">
+                    ${renderReviewableBlock('iot', 'IoT Innovation', n.iot, 'purple')}
+                    ${renderReviewableBlock('sec', 'Secure the Network', n.sec, 'red')}
+                    ${renderReviewableBlock('ai', 'AI for Good', n.ai, 'blue')}
+                    ${renderReviewableBlock('panel', 'Professional Panel', n.panel, 'emerald')}
+                    ${renderReviewableBlock('custom_q', 'Custom Questions', n.custom_q, 'amber')}
+                </div>
+
+                <!-- Reflection Tab -->
+                <div id="modal-tab-reflection" class="space-y-4 hidden">
+                    ${renderReviewableBlock('q1', 'Reflection: Learned', r.q1, 'blue')}
+                    ${renderReviewableBlock('q2', 'Reflection: Careers', (r.q2 || []).join(', '), 'blue')}
+                    ${renderReviewableBlock('q3', 'Reflection: GMCS Skills', (r.q3 || []).join(', '), 'blue')}
+                    ${renderReviewableBlock('q4', 'Reflection: Surprised', r.q4, 'blue')}
+                    ${renderReviewableBlock('q5', 'Reflection: Career Goals', r.q5, 'blue')}
+                    ${renderReviewableBlock('q6', 'Reflection: Want to Learn', r.q6, 'blue')}
+                    ${renderReviewableBlock('q7', 'Reflection: Rating', r.q7, 'blue')}
+                </div>
             `;
             document.getElementById('modal').classList.remove('hidden');
         };
@@ -675,14 +808,14 @@
             return `
                 <div class="h-full flex flex-col items-center justify-center p-6 login-bg rounded-xl">
                     <div class="w-full max-w-sm text-center">
-                        <div class="mb-8"><i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i><h2 class="text-3xl font-bold text-white">NPH TechCon</h2><p class="text-slate-400 mt-2">Enter your info to sync notes.</p></div>
-                        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl text-left">
-                            <div class="mb-4"><label class="block text-xs font-bold text-slate-400 uppercase mb-2">First & Last Name</label><input type="text" id="student-name-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="Jane Doe"></div>
-                            <div class="mb-6"><label class="block text-xs font-bold text-slate-400 uppercase mb-2">School Email</label><input type="email" id="student-email-input" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none placeholder-slate-600" placeholder="jane.doe@school.edu"></div>
+                        <div class="mb-8"><i class="fas fa-robot text-5xl text-blue-500 mb-4 neon-text"></i><h2 class="text-3xl font-bold text-slate-900 dark:text-white">NPH TechCon</h2><p class="text-slate-500 dark:text-slate-400 mt-2">Enter your info to sync notes.</p></div>
+                        <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xl text-left">
+                            <div class="mb-4"><label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">First & Last Name</label><input type="text" id="student-name-input" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600" placeholder="Jane Doe"></div>
+                            <div class="mb-6"><label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">School Email</label><input type="email" id="student-email-input" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none placeholder-slate-400 dark:placeholder-slate-600" placeholder="jane.doe@school.edu"></div>
                             <button onclick="window.login()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mb-4">Start App <i class="fas fa-arrow-right ml-2"></i></button>
-                            <button onclick="window.enableGuestMode(document.getElementById('student-name-input').value)" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold py-3 rounded-lg transition-all"><i class="fas fa-hdd mr-2"></i> Guest Mode</button>
+                            <button onclick="window.enableGuestMode(document.getElementById('student-name-input').value)" class="w-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 text-sm font-semibold py-3 rounded-lg transition-all"><i class="fas fa-hdd mr-2"></i> Guest Mode</button>
                         </div>
-                        <p class="text-center mt-8"><button onclick="window.renderView('teacher-login')" class="text-xs text-slate-600 hover:text-amber-500 transition-colors">Faculty Access</button></p>
+                        <p class="text-center mt-8"><button onclick="window.renderView('teacher-login')" class="text-xs text-slate-500 dark:text-slate-600 hover:text-amber-500 transition-colors">Faculty Access</button></p>
                     </div>
                 </div>`;
         }
@@ -690,14 +823,14 @@
         function getTeacherLoginView() {
             return `
                 <div class="flex flex-col items-center justify-center h-full teacher-bg rounded-xl border border-slate-800">
-                    <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 shadow-2xl w-full max-w-md text-center">
+                    <div class="bg-white dark:bg-slate-800 p-8 rounded-xl border border-gray-200 dark:border-slate-700 shadow-2xl w-full max-w-md text-center">
                         <div class="mb-6"><i class="fas fa-chalkboard-teacher text-4xl text-amber-500"></i></div>
-                        <h2 class="text-2xl font-bold text-white mb-2">Faculty Access</h2>
-                        <p class="text-slate-400 text-sm mb-6">Enter event PIN to view student data.</p>
-                        <input type="password" id="teacher-pin" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white focus:border-amber-500 focus:outline-none mb-4 text-center tracking-widest text-lg" placeholder="••••">
+                        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Faculty Access</h2>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm mb-6">Enter event PIN to view student data.</p>
+                        <input type="password" id="teacher-pin" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none mb-4 text-center tracking-widest text-lg" placeholder="••••">
                         <button onclick="window.attemptTeacherLogin()" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg transition-all">Access Dashboard</button>
-                        <p id="teacher-login-error" class="text-red-400 text-xs mt-3 hidden">Incorrect PIN.</p>
-                        <button onclick="window.renderView('login')" class="text-slate-500 text-xs mt-6 hover:text-white">Back to Student Login</button>
+                        <p id="teacher-login-error" class="text-red-500 dark:text-red-400 text-xs mt-3 hidden">Incorrect PIN.</p>
+                        <button onclick="window.renderView('login')" class="text-slate-500 text-xs mt-6 hover:text-slate-800 dark:hover:text-white">Back to Student Login</button>
                     </div>
                 </div>`;
         }
@@ -706,81 +839,37 @@
             return `
                 <div class="h-full flex flex-col fade-in">
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-                        <!-- Stats Column -->
                         <div class="lg:col-span-1 space-y-4">
-                            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
-                                <div>
-                                    <p class="text-slate-400 text-[10px] uppercase font-bold">Total Students</p>
-                                    <h3 class="text-3xl font-bold text-white" id="stat-count">0</h3>
-                                </div>
-                                <div class="bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-400 text-xl"></i></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                                <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Total Students</p><h3 class="text-3xl font-bold text-slate-900 dark:text-white" id="stat-count">0</h3></div>
+                                <div class="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-xl"></i></div>
                             </div>
-                            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
-                                <div>
-                                    <p class="text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p>
-                                    <h3 class="text-3xl font-bold text-emerald-400" id="stat-active">0</h3>
-                                </div>
-                                <div class="bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-400 text-xl"></i></div>
+                            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                                <div><p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold">Reflections Started</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" id="stat-active">0</h3></div>
+                                <div class="bg-emerald-100 dark:bg-emerald-500/10 p-3 rounded-full"><i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400 text-xl"></i></div>
                             </div>
                         </div>
 
-                        <!-- Graph Column -->
-                        <div class="lg:col-span-2 bg-slate-800 p-4 rounded-xl border border-slate-700">
-                            <h3 class="text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
+                        <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            <h3 class="text-slate-500 dark:text-slate-400 text-[10px] uppercase font-bold mb-3">Student Satisfaction Ratings</h3>
                             <div class="space-y-3">
-                                <!-- Excellent -->
-                                <div>
-                                    <div class="flex justify-between text-xs text-white mb-1">
-                                        <span class="flex items-center"><i class="fas fa-smile-beam text-emerald-400 mr-2"></i> Excellent</span>
-                                        <span id="val-excellent" class="font-mono text-emerald-400">0</span>
-                                    </div>
-                                    <div class="w-full bg-slate-700 rounded-full h-2">
-                                        <div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                                <!-- Good -->
-                                <div>
-                                    <div class="flex justify-between text-xs text-white mb-1">
-                                        <span class="flex items-center"><i class="fas fa-smile text-blue-400 mr-2"></i> Good</span>
-                                        <span id="val-good" class="font-mono text-blue-400">0</span>
-                                    </div>
-                                    <div class="w-full bg-slate-700 rounded-full h-2">
-                                        <div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                                <!-- Okay -->
-                                <div>
-                                    <div class="flex justify-between text-xs text-white mb-1">
-                                        <span class="flex items-center"><i class="fas fa-meh text-amber-400 mr-2"></i> Okay</span>
-                                        <span id="val-okay" class="font-mono text-amber-400">0</span>
-                                    </div>
-                                    <div class="w-full bg-slate-700 rounded-full h-2">
-                                        <div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                                <!-- Needs Improvement -->
-                                <div>
-                                    <div class="flex justify-between text-xs text-white mb-1">
-                                        <span class="flex items-center"><i class="fas fa-frown text-red-400 mr-2"></i> Needs Work</span>
-                                        <span id="val-bad" class="font-mono text-red-400">0</span>
-                                    </div>
-                                    <div class="w-full bg-slate-700 rounded-full h-2">
-                                        <div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                                    </div>
-                                </div>
+                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile-beam text-emerald-500 dark:text-emerald-400 mr-2"></i> Excellent</span><span id="val-excellent" class="font-mono text-emerald-600 dark:text-emerald-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-excellent" class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-smile text-blue-500 dark:text-blue-400 mr-2"></i> Good</span><span id="val-good" class="font-mono text-blue-600 dark:text-blue-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-good" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-meh text-amber-500 dark:text-amber-400 mr-2"></i> Okay</span><span id="val-okay" class="font-mono text-amber-600 dark:text-amber-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-okay" class="bg-amber-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
+                                <div><div class="flex justify-between text-xs text-slate-700 dark:text-white mb-1"><span class="flex items-center"><i class="fas fa-frown text-red-500 dark:text-red-400 mr-2"></i> Needs Work</span><span id="val-bad" class="font-mono text-red-600 dark:text-red-400">0</span></div><div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2"><div id="bar-bad" class="bg-red-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div></div></div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="flex-1 bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
-                        <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
-                            <h3 class="font-bold text-white text-sm"><i class="fas fa-users mr-2"></i> Responses</h3>
-                            <input type="text" onkeyup="window.filterTeacherList(this.value)" placeholder="Search..." class="bg-slate-900 border border-slate-600 rounded px-3 py-1 text-xs text-white focus:border-amber-500 focus:outline-none">
+                    <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col">
+                        <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
+                            <h3 class="font-bold text-slate-900 dark:text-white text-sm"><i class="fas fa-users mr-2"></i> Responses</h3>
+                            <input type="text" onkeyup="window.filterTeacherList(this.value)" placeholder="Search..." class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded px-3 py-1 text-xs text-slate-900 dark:text-white focus:border-amber-500 focus:outline-none">
                         </div>
                         <div class="overflow-y-auto flex-1 p-0">
                             <table class="w-full text-left border-collapse">
-                                <thead class="bg-slate-900 text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
-                                <tbody id="teacher-table-body" class="divide-y divide-slate-700 text-sm text-slate-300"><tr><td colspan="7" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
+                                <thead class="bg-gray-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] uppercase sticky top-0"><tr><th class="p-3">Name</th><th class="p-3 text-center">Prep</th><th class="p-3 text-center">IoT</th><th class="p-3 text-center">Sec</th><th class="p-3 text-center">AI</th><th class="p-3 text-center">Reflect</th><th class="p-3 text-right">Action</th></tr></thead>
+                                <tbody id="teacher-table-body" class="divide-y divide-gray-200 dark:divide-slate-700 text-sm text-slate-700 dark:text-slate-300"><tr><td colspan="7" class="p-8 text-center text-slate-500">Loading...</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -791,32 +880,32 @@
             // Aggregate Qs from teacherData
             const studentQs = teacherData.filter(s => s.notes && s.notes.custom_q && s.notes.custom_q.trim().length > 0)
                 .map(s => `
-                    <div class="bg-slate-700 p-4 rounded-xl border border-slate-600 shadow-lg">
-                        <p class="text-white text-lg font-medium">"${s.notes.custom_q}"</p>
-                        <p class="text-slate-400 text-xs mt-2 text-right uppercase tracking-wider font-bold">- ${s.studentName}</p>
+                    <div class="bg-white dark:bg-slate-700 p-4 rounded-xl border border-gray-200 dark:border-slate-600 shadow-lg">
+                        <p class="text-slate-800 dark:text-white text-lg font-medium">"${s.notes.custom_q}"</p>
+                        <p class="text-slate-500 dark:text-slate-400 text-xs mt-2 text-right uppercase tracking-wider font-bold">- ${s.studentName}</p>
                     </div>
                 `).join('');
 
             const qSection = studentQs.length > 0 
                 ? `<div class="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-2">${studentQs}</div>` 
-                : `<div class="text-center text-slate-500 py-12 border-2 border-dashed border-slate-700 rounded-xl">No student questions submitted yet.</div>`;
+                : `<div class="text-center text-slate-400 dark:text-slate-500 py-12 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl">No student questions submitted yet.</div>`;
 
             return `
                 <div class="h-full overflow-y-auto fade-in pr-2 pb-12">
                     <div class="max-w-3xl mx-auto space-y-12">
                         <!-- Slide 1: Welcome -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-amber-500/30 text-center shadow-2xl">
-                            <h2 class="text-5xl font-extrabold text-white mb-2">NPH TechCon 2025</h2>
-                            <p class="text-xl text-amber-400 font-bold tracking-widest uppercase mb-6">Connect. Protect. Empower.</p>
-                            <p class="text-slate-400 leading-relaxed text-lg">Our goal is to explore emerging technology, understand cybersecurity fundamentals, and empower you to build the future.</p>
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-amber-500/30 text-center shadow-2xl">
+                            <h2 class="text-5xl font-extrabold text-slate-900 dark:text-white mb-2">NPH TechCon 2025</h2>
+                            <p class="text-xl text-amber-500 dark:text-amber-400 font-bold tracking-widest uppercase mb-6">Connect. Protect. Empower.</p>
+                            <p class="text-slate-600 dark:text-slate-400 leading-relaxed text-lg">Our goal is to explore emerging technology, understand cybersecurity fundamentals, and empower you to build the future.</p>
                         </div>
 
                         <!-- Slide 2: Login -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 relative overflow-hidden">
                             <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-sign-in-alt text-8xl text-blue-500"></i></div>
-                            <h3 class="text-3xl font-bold text-white mb-6 flex items-center"><span class="bg-blue-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">1</span> Login</h3>
-                            <p class="text-slate-300 mb-4 text-lg">Access the web app using your school credentials.</p>
-                            <ul class="text-base text-slate-400 space-y-3 ml-14">
+                            <h3 class="text-3xl font-bold text-slate-900 dark:text-white mb-6 flex items-center"><span class="bg-blue-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">1</span> Login</h3>
+                            <p class="text-slate-600 dark:text-slate-300 mb-4 text-lg">Access the web app using your school credentials.</p>
+                            <ul class="text-base text-slate-500 dark:text-slate-400 space-y-3 ml-14">
                                 <li>• Enter your <strong>First & Last Name</strong>.</li>
                                 <li>• Enter your <strong>School Email</strong> (e.g., jane.doe@school.edu).</li>
                                 <li>• This creates your cloud profile for syncing notes.</li>
@@ -824,11 +913,11 @@
                         </div>
 
                         <!-- Slide 3: Prep -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 relative overflow-hidden">
                             <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-clipboard-check text-8xl text-emerald-500"></i></div>
-                            <h3 class="text-3xl font-bold text-white mb-6 flex items-center"><span class="bg-emerald-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">2</span> Get Ready</h3>
-                            <p class="text-slate-300 mb-4 text-lg">Complete the checklist before the convention.</p>
-                            <ul class="text-base text-slate-400 space-y-3 ml-14">
+                            <h3 class="text-3xl font-bold text-slate-900 dark:text-white mb-6 flex items-center"><span class="bg-emerald-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">2</span> Get Ready</h3>
+                            <p class="text-slate-600 dark:text-slate-300 mb-4 text-lg">Complete the checklist before the convention.</p>
+                            <ul class="text-base text-slate-500 dark:text-slate-400 space-y-3 ml-14">
                                 <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Charge Laptop to 100%</li>
                                 <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Pack your Charger</li>
                                 <li class="flex items-center"><i class="fas fa-check text-emerald-500 mr-2"></i> Verify Login Works</li>
@@ -837,47 +926,47 @@
                         </div>
 
                         <!-- Slide 4: Passport -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 relative overflow-hidden">
                             <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-passport text-8xl text-purple-500"></i></div>
-                            <h3 class="text-3xl font-bold text-white mb-6 flex items-center"><span class="bg-purple-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">3</span> Digital Passport</h3>
-                            <p class="text-slate-300 mb-4 text-lg">Your workspace during the convention.</p>
-                            <div class="grid grid-cols-2 gap-4 text-sm text-slate-400 ml-14">
-                                <div class="bg-slate-900 p-4 rounded border border-slate-600">
-                                    <strong class="block text-white mb-1 text-base">IoT Innovation</strong>
+                            <h3 class="text-3xl font-bold text-slate-900 dark:text-white mb-6 flex items-center"><span class="bg-purple-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">3</span> Digital Passport</h3>
+                            <p class="text-slate-600 dark:text-slate-300 mb-4 text-lg">Your workspace during the convention.</p>
+                            <div class="grid grid-cols-2 gap-4 text-sm text-slate-500 dark:text-slate-400 ml-14">
+                                <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded border border-gray-200 dark:border-slate-600">
+                                    <strong class="block text-slate-900 dark:text-white mb-1 text-base">IoT Innovation</strong>
                                     Take notes on smart devices.
                                 </div>
-                                <div class="bg-slate-900 p-4 rounded border border-slate-600">
-                                    <strong class="block text-white mb-1 text-base">Security</strong>
+                                <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded border border-gray-200 dark:border-slate-600">
+                                    <strong class="block text-slate-900 dark:text-white mb-1 text-base">Security</strong>
                                     Cybersecurity defense tactics.
                                 </div>
-                                <div class="bg-slate-900 p-4 rounded border border-slate-600">
-                                    <strong class="block text-white mb-1 text-base">AI for Good</strong>
+                                <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded border border-gray-200 dark:border-slate-600">
+                                    <strong class="block text-slate-900 dark:text-white mb-1 text-base">AI for Good</strong>
                                     Solving problems with AI.
                                 </div>
-                                <div class="bg-slate-900 p-4 rounded border border-slate-600">
-                                    <strong class="block text-white mb-1 text-base">Panel</strong>
+                                <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded border border-gray-200 dark:border-slate-600">
+                                    <strong class="block text-slate-900 dark:text-white mb-1 text-base">Panel</strong>
                                     Career Q&A notes.
                                 </div>
                             </div>
                         </div>
 
                         <!-- Slide 5: Class Q&A (Dynamic) -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 relative overflow-hidden">
                             <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-comments text-8xl text-amber-500"></i></div>
-                            <h3 class="text-3xl font-bold text-white mb-6 flex items-center"><span class="bg-amber-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">5</span> Class Q&A</h3>
+                            <h3 class="text-3xl font-bold text-slate-900 dark:text-white mb-6 flex items-center"><span class="bg-amber-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">5</span> Class Q&A</h3>
                             <div class="ml-14">
-                                <p class="text-slate-300 mb-6 text-lg">Questions submitted by the class for our speakers.</p>
+                                <p class="text-slate-600 dark:text-slate-300 mb-6 text-lg">Questions submitted by the class for our speakers.</p>
                                 ${qSection}
                             </div>
                         </div>
 
                         <!-- Slide 6: Save -->
-                        <div class="bg-slate-800 rounded-2xl p-8 border border-slate-700 relative overflow-hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 border border-gray-200 dark:border-slate-700 relative overflow-hidden">
                             <div class="absolute top-0 right-0 p-4 opacity-10"><i class="fas fa-save text-8xl text-red-500"></i></div>
-                            <h3 class="text-3xl font-bold text-white mb-6 flex items-center"><span class="bg-red-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">6</span> Save & Export</h3>
-                            <p class="text-slate-300 mb-4 text-lg">Don't lose your work!</p>
-                            <ul class="text-base text-slate-400 space-y-3 ml-14">
-                                <li>• Click the <span class="text-emerald-400 font-bold">Green "Save Now"</span> button frequently.</li>
+                            <h3 class="text-3xl font-bold text-slate-900 dark:text-white mb-6 flex items-center"><span class="bg-red-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg mr-4">6</span> Save & Export</h3>
+                            <p class="text-slate-600 dark:text-slate-300 mb-4 text-lg">Don't lose your work!</p>
+                            <ul class="text-base text-slate-500 dark:text-slate-400 space-y-3 ml-14">
+                                <li>• Click the <span class="text-emerald-500 dark:text-emerald-400 font-bold">Green "Save Now"</span> button frequently.</li>
                                 <li>• Watch the sync icon in the top right.</li>
                                 <li>• Use "Copy All" to paste your notes into your final portfolio document.</li>
                             </ul>
@@ -889,27 +978,201 @@
 
         // Student Views
         function getHomeView() {
-            return `<div class="space-y-6 fade-in pt-4"><div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden"><div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div><h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2><p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p></div><div class="grid grid-cols-2 gap-4"><button onclick="window.renderView('prep')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-blue-500 transition-all text-left group"><div class="bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-500/20"><i class="fas fa-clipboard-check text-blue-400"></i></div><h3 class="font-bold text-slate-200">Pre-Check</h3><p class="text-xs text-slate-500 mt-1">Get ready</p></button><button onclick="window.renderView('passport')" class="bg-slate-800 p-4 rounded-xl border border-slate-700 hover:border-emerald-500 transition-all text-left group"><div class="bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-500/20"><i class="fas fa-pen-fancy text-emerald-400"></i></div><h3 class="font-bold text-slate-200">Notes</h3><p class="text-xs text-slate-500 mt-1">Draft reflection</p></button></div></div>`;
+            const stamps = calculateStamps();
+            const total = 5; 
+            const progress = (stamps / total) * 100;
+
+            return `
+                <div class="space-y-6 fade-in pt-4">
+                    <!-- Hero Card -->
+                    <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 neon-border text-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
+                        <h2 class="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">Connect. Protect. Empower.</h2>
+                        <p class="text-slate-400 text-sm mb-4">Navajo Pine High School</p>
+                        <div class="inline-block px-4 py-1 rounded-full bg-slate-800 border border-slate-600 text-xs font-mono text-slate-300">
+                            <i class="far fa-calendar-alt mr-2"></i>Thursday, Jan 15
+                        </div>
+                    </div>
+
+                    <!-- Progress Card (Gamification) -->
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-lg">
+                        <div class="flex justify-between items-end mb-2">
+                            <div>
+                                <h3 class="text-slate-900 dark:text-white font-bold"><i class="fas fa-medal text-amber-500 mr-2"></i>Mission Progress</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Collect stamps by taking notes.</p>
+                            </div>
+                            <span class="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono">${stamps}/${total}</span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+                            <div class="bg-gradient-to-r from-blue-500 to-emerald-400 h-3 rounded-full transition-all duration-1000" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <button onclick="window.renderView('prep')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all text-left group">
+                            <div class="bg-blue-100 dark:bg-blue-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-500/20">
+                                <i class="fas fa-clipboard-check text-blue-600 dark:text-blue-400"></i>
+                            </div>
+                            <h3 class="font-bold text-slate-900 dark:text-slate-200">Pre-Check</h3>
+                            <p class="text-xs text-slate-500 mt-1">Get ready</p>
+                        </button>
+                        <button onclick="window.renderView('passport')" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 transition-all text-left group">
+                            <div class="bg-emerald-100 dark:bg-emerald-500/10 w-10 h-10 rounded-lg flex items-center justify-center mb-3 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-500/20">
+                                <i class="fas fa-pen-fancy text-emerald-600 dark:text-emerald-400"></i>
+                            </div>
+                            <h3 class="font-bold text-slate-900 dark:text-slate-200">Notes</h3>
+                            <p class="text-xs text-slate-500 mt-1">Draft reflection</p>
+                        </button>
+                    </div>
+
+                    <!-- Rotation Preview -->
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 ml-1">Learning Rotations</h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
+                                <div class="bg-purple-100 dark:bg-purple-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-microchip text-purple-600 dark:text-purple-400"></i></div>
+                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">IoT Innovation</h4><p class="text-xs text-slate-500">Connected devices</p></div>
+                            </div>
+                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
+                                <div class="bg-red-100 dark:bg-red-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-shield-alt text-red-600 dark:text-red-400"></i></div>
+                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">Secure the Network</h4><p class="text-xs text-slate-500">Cybersecurity</p></div>
+                            </div>
+                            <div class="flex items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700/50">
+                                <div class="bg-blue-100 dark:bg-blue-400/10 w-10 h-10 rounded-lg flex items-center justify-center mr-3"><i class="fas fa-robot text-blue-600 dark:text-blue-400"></i></div>
+                                <div><h4 class="font-bold text-slate-900 dark:text-slate-200 text-sm">AI for Good</h4><p class="text-xs text-slate-500">Artificial Intelligence</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
+
         function getPrepView() {
             const isCharged = appData.checklist?.charged || false;
             const isPack = appData.checklist?.pack || false;
             const isLogin = appData.checklist?.login || false;
             const isCisco = appData.checklist?.cisco || false;
-            const questions = ["Do I really need a college degree, or are certifications enough?", "How did you get your very first job in tech?", "What does a 'bad day' at work look like for you?", "What classes in high school actually helped you the most?", "What coding language should a beginner learn first?", "Is AI going to replace entry-level programming jobs?", "How important are 'soft skills' compared to technical skills?", "How do you handle stress and avoid burnout?"];
-            return `<div class="space-y-6 fade-in pt-4"><div class="text-center mb-6"><h2 class="text-2xl font-bold text-white">Get Ready</h2></div><div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg"><h3 class="text-blue-400 font-bold mb-4 flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3><div class="space-y-4"><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Charge Laptop to 100%</span></div></label><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Pack Laptop Charger</span></div></label><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Verify School Login</span></div></label><label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-6 h-6 bg-slate-900 border-2 border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-200 group-hover:text-white">Install Cisco Packet Tracer</span><span class="block text-xs text-slate-500">Required for Network Security rotation.</span></div></label></div></div><div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg"><h3 class="text-amber-400 font-bold mb-4 flex items-center"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3><div class="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 mb-4">${questions.map(q => `<div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-amber-500/50 transition-colors group"><p class="text-xs text-slate-300 group-hover:text-white">"${q}"</p></div>`).join('')}</div><h3 class="text-amber-400 font-bold mb-2 flex items-center pt-4 border-t border-slate-700"><i class="fas fa-pen mr-2"></i> My Questions</h3><textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-600 mb-2" placeholder="I want to ask...">${appData.notes?.custom_q || ''}</textarea><button onclick="window.manualSave()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors w-full"><i class="fas fa-save mr-1"></i> Save Question</button></div></div>`;
+            
+            // Revert questions list to 10 as requested in previous turn, to keep it concise
+             const questions = [
+                "Do I really need a college degree, or are certifications enough?",
+                "How did you get your very first job in tech?",
+                "What does a 'bad day' at work look like for you?",
+                "What classes in high school actually helped you the most?",
+                "What coding language should a beginner learn first?",
+                "Is AI going to replace entry-level programming jobs?",
+                "How important are 'soft skills' compared to technical skills?",
+                "How do you handle stress and avoid burnout?",
+                "Which specific certifications are actually worth the money?",
+                "Who is your role model in the tech industry?"
+            ];
+
+            return `
+                <div class="space-y-6 fade-in pt-4">
+                    <div class="text-center mb-6"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Get Ready</h2></div>
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 shadow-lg">
+                        <h3 class="text-blue-600 dark:text-blue-400 font-bold mb-4 flex items-center"><i class="fas fa-tasks mr-2"></i> Student Checklist</h3>
+                        <div class="space-y-4">
+                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-charge" class="peer sr-only" ${isCharged ? 'checked' : ''} onchange="window.toggleCheck('charged')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Charge Laptop to 100%</span></div></label>
+                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-pack" class="peer sr-only" ${isPack ? 'checked' : ''} onchange="window.toggleCheck('pack')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Pack Laptop Charger</span></div></label>
+                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-login" class="peer sr-only" ${isLogin ? 'checked' : ''} onchange="window.toggleCheck('login')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Verify School Login</span></div></label>
+                            <label class="flex items-start cursor-pointer group"><div class="relative flex items-center"><input type="checkbox" id="check-cisco" class="peer sr-only" ${isCisco ? 'checked' : ''} onchange="window.toggleCheck('cisco')"><div class="w-6 h-6 bg-gray-100 dark:bg-slate-900 border-2 border-gray-300 dark:border-slate-600 rounded peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all flex items-center justify-center"><i class="fas fa-check text-white text-xs opacity-0 peer-checked:opacity-100"></i></div></div><div class="ml-3"><span class="block text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">Install Cisco Packet Tracer</span><span class="block text-xs text-slate-500">Required for Network Security rotation.</span></div></label>
+                        </div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 shadow-lg relative">
+                        <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-4 flex items-center"><i class="fas fa-lightbulb mr-2"></i> Panel Q&A Ideas</h3>
+                        <div class="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 mb-4">
+                            ${questions.map(q => `<div class="p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-amber-500/50 transition-colors group"><p class="text-xs text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white">"${q}"</p></div>`).join('')}
+                        </div>
+                        <h3 class="text-amber-500 dark:text-amber-400 font-bold mb-2 flex items-center pt-4 border-t border-gray-200 dark:border-slate-700"><i class="fas fa-pen mr-2"></i> My Questions</h3>
+                        ${getTeacherStamp('custom_q')}
+                        <p class="text-xs text-slate-500 mb-2">Write your own questions here:</p>
+                        <textarea id="note-custom-q" oninput="window.saveNote('custom_q', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 h-24 placeholder-slate-400 dark:placeholder-slate-600 mb-2" placeholder="I want to ask...">${appData.notes?.custom_q || ''}</textarea>
+                        <button onclick="window.manualSave()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs font-bold transition-colors w-full"><i class="fas fa-save mr-1"></i> Save Question</button>
+                    </div>
+                </div>
+            `;
         }
+
         function getAgendaView() {
-            return `<div class="space-y-4 fade-in pt-4"><div class="flex justify-between items-end mb-2"><h2 class="text-2xl font-bold text-white">Agenda</h2><span class="text-xs font-mono text-blue-400 bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span></div><div class="relative border-l-2 border-slate-700 ml-3 space-y-8 pb-4"><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-500 text-xs"></i></div><h3 class="text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-400 text-xs leading-relaxed">Meet at front entrance.</p></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:00 AM</span></div><h3 class="text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-400 text-xs leading-relaxed">SSC</p></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">10:15 AM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 1</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">11:15 AM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 2</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">12:15 PM</span></div><h3 class="text-white font-bold text-base mb-1">Rotation 3</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-slate-900 border-slate-600"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">1:25 PM</span></div><h3 class="text-white font-bold text-base mb-1">Professional Panel</h3></div></div><div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-400 font-mono text-sm font-bold">2:10 PM</span></div><h3 class="text-white font-bold text-base mb-1">Bus Departs SSC</h3></div></div></div></div>`;
+            return `
+                <div class="space-y-4 fade-in pt-4">
+                    <div class="flex justify-between items-end mb-2">
+                        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Agenda</h2>
+                        <span class="text-xs font-mono text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-400/10 px-2 py-1 rounded">NPH Schedule</span>
+                    </div>
+                    <div class="relative border-l-2 border-gray-300 dark:border-slate-700 ml-3 space-y-8 pb-4">
+                         <!-- Items omitted for brevity but logic remains same with light/dark classes -->
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">9:10 AM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs NPH</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Meet at front entrance. Don't be late!</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:00 AM</span><i class="fas fa-map-marker-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Arrival & Check-in</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">GMCS Student Support Center (SSC)</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">10:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 1</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">IoT, Security, or AI Challenge</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">11:15 AM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 2</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Switch stations</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">12:15 PM</span><i class="fas fa-sync-alt text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Rotation 3</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Final station</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-gray-200 dark:bg-slate-900 border-gray-400 dark:border-slate-600"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">1:25 PM</span><i class="fas fa-users text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Professional Panel</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Industry insights & Q&A</p></div></div>
+                        <div class="relative pl-8"><div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 bg-blue-500 border-blue-500"></div><div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-gray-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-colors"><div class="flex justify-between items-start mb-1"><span class="text-blue-600 dark:text-blue-400 font-mono text-sm font-bold">2:10 PM</span><i class="fas fa-bus text-slate-400 dark:text-slate-500 text-xs"></i></div><h3 class="text-slate-900 dark:text-white font-bold text-base mb-1">Bus Departs SSC</h3><p class="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">Return trip to Navajo Pine HS</p></div></div>
+                    </div>
+                </div>
+            `;
         }
+
         function getPassportView() {
             const notes1 = appData.notes?.iot || ''; const notes2 = appData.notes?.sec || ''; const notes3 = appData.notes?.ai || ''; const notes4 = appData.notes?.panel || '';
             const tComment = appData.teacherComment;
+            
             let feedbackHTML = '';
             if (tComment && tComment.length > 0) {
-                feedbackHTML = `<div class="bg-gradient-to-r from-amber-900/40 to-amber-900/20 border border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden"><div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div><h4 class="text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4><p class="text-slate-200 text-sm leading-relaxed">${tComment}</p></div>`;
+                feedbackHTML = `
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
+                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
+                        <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
+                    </div>
+                `;
             }
-            return `<div class="space-y-6 fade-in pt-4"><div class="text-center"><h2 class="text-2xl font-bold text-white">Digital Passport</h2><p class="text-xs text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div>${feedbackHTML}<div class="space-y-6"><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-white">IoT Innovation</h3></div><p class="text-xs text-slate-400 mb-3">What problem were you solving?</p><textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Secure the Network</h3></div><p class="text-xs text-slate-400 mb-3">Why is protection important?</p><textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-white">AI for Good</h3></div><p class="text-xs text-slate-400 mb-3">Who benefits from your solution?</p><textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea></div><div class="bg-slate-800 p-4 rounded-xl border border-slate-700"><div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-white">Professional Panel</h3></div><p class="text-xs text-slate-400 mb-3">Which career path interested you?</p><textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea></div></div><div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent flex gap-3 px-1"><button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button><button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button></div><p class="text-center text-[10px] text-slate-500 mt-2 pb-4">Paste into your College & Career Passport later.</p></div>`;
+
+            return `
+                <div class="space-y-6 fade-in pt-4 relative">
+                    ${getReviewStamp()}
+                    <div class="text-center"><h2 class="text-2xl font-bold text-slate-900 dark:text-white">Digital Passport</h2><p class="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-xs mx-auto">Draft your thoughts here!</p></div>
+                    ${feedbackHTML}
+                    <div class="space-y-6">
+                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            ${getStamp('iot')}
+                            ${getTeacherStamp('iot')}
+                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-purple-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">IoT Innovation</h3></div>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">What problem were you solving?</p>
+                            <textarea id="note-iot" oninput="window.saveNote('iot', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-purple-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I built a sensor that...">${notes1}</textarea>
+                        </div>
+                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            ${getStamp('sec')}
+                            ${getTeacherStamp('sec')}
+                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-red-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">Secure the Network</h3></div>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Why is protection important?</p>
+                            <textarea id="note-sec" oninput="window.saveNote('sec', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-red-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="Cybersecurity matters because...">${notes2}</textarea>
+                        </div>
+                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            ${getStamp('ai')}
+                            ${getTeacherStamp('ai')}
+                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-blue-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">AI for Good</h3></div>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Who benefits from your solution?</p>
+                            <textarea id="note-ai" oninput="window.saveNote('ai', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="My solution helps...">${notes3}</textarea>
+                        </div>
+                        <div class="relative bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                            ${getStamp('panel')}
+                            ${getTeacherStamp('panel')}
+                            <div class="flex items-center mb-2"><div class="w-2 h-8 bg-emerald-500 rounded-full mr-3"></div><h3 class="font-bold text-slate-900 dark:text-white">Professional Panel</h3></div>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Which career path interested you?</p>
+                            <textarea id="note-panel" oninput="window.saveNote('panel', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I liked the speaker who...">${notes4}</textarea>
+                        </div>
+                    </div>
+                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1">
+                        <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button>
+                        <button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button>
+                    </div>
+                    <p class="text-center text-[10px] text-slate-500 mt-2 pb-4">Paste into your College & Career Passport later.</p>
+                </div>
+            `;
         }
 
         function getReflectionView() {
@@ -919,10 +1182,10 @@
             let feedbackHTML = '';
             if (tComment && tComment.length > 0) {
                 feedbackHTML = `
-                    <div class="bg-gradient-to-r from-amber-900/40 to-amber-900/20 border border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
+                    <div class="bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 border border-amber-300 dark:border-amber-600/50 p-4 rounded-xl mb-4 relative overflow-hidden">
                         <div class="absolute top-0 right-0 p-2 opacity-10"><i class="fas fa-comment-dots text-6xl text-amber-500"></i></div>
-                        <h4 class="text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
-                        <p class="text-slate-200 text-sm leading-relaxed">${tComment}</p>
+                        <h4 class="text-amber-600 dark:text-amber-400 font-bold text-sm uppercase mb-1"><i class="fas fa-chalkboard-teacher mr-2"></i> Teacher Feedback</h4>
+                        <p class="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">${tComment}</p>
                     </div>
                 `;
             }
@@ -930,40 +1193,44 @@
             const checkBox = (key, val, label) => {
                 const checked = (r[key] || []).includes(val) ? 'checked' : '';
                 return `
-                <label class="flex items-start space-x-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="checkbox" class="mt-1 form-checkbox text-blue-500 rounded bg-slate-800 border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-sm text-slate-300 select-none">${label}</span>
+                <label class="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="checkbox" class="mt-1 form-checkbox text-blue-500 rounded bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-sm text-slate-600 dark:text-slate-300 select-none">${label}</span>
                 </label>`;
             };
 
             const radioBox = (key, val, label) => {
                 const checked = r[key] === val ? 'checked' : '';
                 return `
-                <label class="flex items-center space-x-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
-                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-slate-800 border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
-                    <span class="text-sm text-slate-300 select-none">${label}</span>
+                <label class="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700/50 hover:border-blue-500/50 cursor-pointer">
+                    <input type="radio" name="${key}" class="form-radio text-blue-500 bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 focus:ring-0" ${checked} onchange="window.saveReflection('${key}', '${val}')">
+                    <span class="text-sm text-slate-600 dark:text-slate-300 select-none">${label}</span>
                 </label>`;
             };
 
             return `
-                <div class="space-y-6 fade-in pt-4 pb-8">
+                <div class="space-y-6 fade-in pt-4 pb-8 relative">
+                    ${getReviewStamp()}
                     <div class="text-center">
-                        <h2 class="text-2xl font-bold text-white">Event Reflection</h2>
-                        <p class="text-xs text-slate-400 mt-1">Wrap up your experience.</p>
+                        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Event Reflection</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Wrap up your experience.</p>
                     </div>
 
                     ${feedbackHTML}
 
                     <!-- Q1 -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-2">1. What was your biggest takeaway from today?</h3>
-                        <p class="text-xs text-slate-400 mb-3">(2-3 Sentences)</p>
-                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-600" placeholder="I learned that...">${r.q1 || ''}</textarea>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getStamp('reflection')}
+                        ${getTeacherStamp('q1')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">1. What was your biggest takeaway from today?</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">(2-3 Sentences)</p>
+                        <textarea oninput="window.saveReflection('q1', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-24 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I learned that...">${r.q1 || ''}</textarea>
                     </div>
 
                     <!-- Q2 Careers (2-Column Grid) -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-3">2. Which career paths did you explore?</h3>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q2')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">2. Which career paths did you explore?</h3>
                         <div class="grid grid-cols-2 gap-2">
                             ${checkBox('q2', 'Engineering', 'Engineering')}
                             ${checkBox('q2', 'Health / Biomedical', 'Health / Biomedical')}
@@ -975,14 +1242,15 @@
                     </div>
 
                     <!-- Q3 Skills (2x2 Grid) -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-1">3. GMCS Graduate Profile Skills</h3>
-                        <p class="text-xs text-slate-400 mb-4">Check 2-3 skills you used today.</p>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q3')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-1">3. GMCS Graduate Profile Skills</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Check 2-3 skills you used today.</p>
                         
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <!-- Creative -->
-                            <div class="bg-slate-900/30 p-3 rounded-lg border border-purple-500/20">
-                                <h4 class="text-purple-400 text-xs font-bold uppercase mb-2">Creative & Critical Thinker</h4>
+                            <div class="bg-purple-50 dark:bg-slate-900/30 p-3 rounded-lg border border-purple-200 dark:border-purple-500/20">
+                                <h4 class="text-purple-600 dark:text-purple-400 text-xs font-bold uppercase mb-2">Creative & Critical Thinker</h4>
                                 <div class="space-y-2">
                                     ${checkBox('q3', 'Solved Problems', 'Solved Problems')}
                                     ${checkBox('q3', 'Shared My Work', 'Shared My Work')}
@@ -990,8 +1258,8 @@
                                 </div>
                             </div>
                             <!-- Responsible -->
-                            <div class="bg-slate-900/30 p-3 rounded-lg border border-emerald-500/20">
-                                <h4 class="text-emerald-400 text-xs font-bold uppercase mb-2">Responsible Individual</h4>
+                            <div class="bg-emerald-50 dark:bg-slate-900/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
+                                <h4 class="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-2">Responsible Individual</h4>
                                 <div class="space-y-2">
                                     ${checkBox('q3', 'Accountable', 'Accountable')}
                                     ${checkBox('q3', 'Prepared', 'Prepared')}
@@ -999,8 +1267,8 @@
                                 </div>
                             </div>
                             <!-- Collaborator -->
-                            <div class="bg-slate-900/30 p-3 rounded-lg border border-blue-500/20">
-                                <h4 class="text-blue-400 text-xs font-bold uppercase mb-2">Effective Collaborator</h4>
+                            <div class="bg-blue-50 dark:bg-slate-900/30 p-3 rounded-lg border border-blue-200 dark:border-blue-500/20">
+                                <h4 class="text-blue-600 dark:text-blue-400 text-xs font-bold uppercase mb-2">Effective Collaborator</h4>
                                 <div class="space-y-2">
                                     ${checkBox('q3', 'Listened', 'Listened')}
                                     ${checkBox('q3', 'Mutual Respect', 'Mutual Respect')}
@@ -1008,8 +1276,8 @@
                                 </div>
                             </div>
                             <!-- Learner -->
-                            <div class="bg-slate-900/30 p-3 rounded-lg border border-amber-500/20">
-                                <h4 class="text-amber-400 text-xs font-bold uppercase mb-2">Lifelong Learner</h4>
+                            <div class="bg-amber-50 dark:bg-slate-900/30 p-3 rounded-lg border border-amber-200 dark:border-amber-500/20">
+                                <h4 class="text-amber-600 dark:text-amber-400 text-xs font-bold uppercase mb-2">Lifelong Learner</h4>
                                 <div class="space-y-2">
                                     ${checkBox('q3', 'Authentic', 'Authentic')}
                                     ${checkBox('q3', 'Reflective', 'Reflective')}
@@ -1020,14 +1288,16 @@
                     </div>
 
                     <!-- Q4 Surprise -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-2">4. What surprised you the most today?</h3>
-                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-600" placeholder="One short sentence...">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q4')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">4. What surprised you the most today?</h3>
+                        <input type="text" oninput="window.saveReflection('q4', this.value)" value="${r.q4 || ''}" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 placeholder-slate-400 dark:placeholder-slate-600" placeholder="One short sentence...">
                     </div>
 
                     <!-- Q5 Goals (2-Column Grid) -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-3">5. Impact on career goals?</h3>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q5')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">5. Impact on career goals?</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
                             ${radioBox('q5', 'More Interested', 'I am more interested')}
                             ${radioBox('q5', 'Learned New', 'I learned something new')}
@@ -1037,14 +1307,16 @@
                     </div>
 
                     <!-- Q6 Next -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-2">6. What do you want to learn more about next?</h3>
-                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 h-20 placeholder-slate-600" placeholder="I want to look up...">${r.q6 || ''}</textarea>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q6')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-2">6. What do you want to learn more about next?</h3>
+                        <textarea oninput="window.saveReflection('q6', this.value)" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-blue-500 h-20 placeholder-slate-400 dark:placeholder-slate-600" placeholder="I want to look up...">${r.q6 || ''}</textarea>
                     </div>
 
                     <!-- Q7 Rating (2-Column Grid) -->
-                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="text-white font-bold mb-3">7. Rate experience</h3>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+                        ${getTeacherStamp('q7')}
+                        <h3 class="text-slate-900 dark:text-white font-bold mb-3">7. Rate experience</h3>
                         <div class="grid grid-cols-2 gap-2">
                             ${radioBox('q7', 'Excellent', 'Excellent 🤩')}
                             ${radioBox('q7', 'Good', 'Good 🙂')}
@@ -1053,8 +1325,9 @@
                         </div>
                     </div>
 
-                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent flex gap-3 px-1">
-                        <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Reflection</button>
+                    <div class="sticky bottom-0 pb-4 pt-2 bg-gradient-to-t from-gray-50 dark:from-[#0f172a] via-gray-50 dark:via-[#0f172a] to-transparent flex gap-3 px-1">
+                        <button onclick="window.manualSave()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center"><i class="fas fa-save mr-2"></i> Save Now</button>
+                        <button onclick="window.copyAllNotes()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center"><i class="fas fa-copy mr-2"></i> Copy All</button>
                     </div>
                 </div>
             `;
